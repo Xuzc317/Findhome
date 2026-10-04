@@ -24,6 +24,7 @@ export interface MatchedHouse {
   old_small: boolean;
   geo_source: string | null;
   geo_precision: string | null;
+  listing_kind: "sublet" | "direct" | "normal";
   seller_id: string | null;
   seller_listings: number;
   poster_type: "individual" | "agency" | "unknown";

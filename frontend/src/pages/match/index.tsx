@@ -101,6 +101,29 @@ function PosterTag({ item }: { item: MatchedHouse }) {
   return null;
 }
 
+/** 房源性质：转租是租客自己要走了，图片/价格通常真实，中介基本不做这类 */
+function KindTag({ item }: { item: MatchedHouse }) {
+  if (item.listing_kind === "sublet") {
+    return (
+      <Tooltip title="转租：原租客因工作/离开等原因转让合同。这类房源图片与价格通常是真实的，中介很少做，值得优先看。">
+        <Tag color="gold" style={{ margin: 0, fontSize: 11 }}>
+          🔑 转租
+        </Tag>
+      </Tooltip>
+    );
+  }
+  if (item.listing_kind === "direct") {
+    return (
+      <Tooltip title="标题/正文写明房东直租、无中介费（注意：中介也会这么写，需结合发布者身份判断）">
+        <Tag color="cyan" style={{ margin: 0, fontSize: 11 }}>
+          直接房东
+        </Tag>
+      </Tooltip>
+    );
+  }
+  return null;
+}
+
 function MatchCard({ item }: { item: MatchedHouse }) {
   const walkText =
     item.walk_minutes != null
@@ -249,6 +272,7 @@ function MatchCard({ item }: { item: MatchedHouse }) {
             <Tag color="magenta" style={{ margin: 0, fontSize: 11 }}>
               {SOURCE_LABEL[item.source] || item.source}
             </Tag>
+            <KindTag item={item} />
             <PosterTag item={item} />
           </span>
           <a
@@ -280,6 +304,7 @@ export default function MatchPage() {
   const [posterFilter, setPosterFilter] = useState<"all" | "individual" | "agency">(
     "all"
   );
+  const [kindFilter, setKindFilter] = useState<"all" | "sublet" | "direct">("all");
 
   useEffect(() => {
     service
@@ -360,7 +385,8 @@ export default function MatchPage() {
       (m) =>
         (stationFilter.length === 0 || stationFilter.includes(m.nearest_station)) &&
         (sourceFilter.length === 0 || sourceFilter.includes(m.source)) &&
-        (posterFilter === "all" || m.poster_type === posterFilter)
+        (posterFilter === "all" || m.poster_type === posterFilter) &&
+        (kindFilter === "all" || m.listing_kind === kindFilter)
     );
     const sorted = [...filtered];
     if (sortBy === "walk") {
@@ -375,7 +401,7 @@ export default function MatchPage() {
       sorted.sort((a, b) => b.newness_score - a.newness_score);
     }
     return sorted;
-  }, [rawList, stationFilter, sourceFilter, sortBy, posterFilter]);
+  }, [rawList, stationFilter, sourceFilter, sortBy, posterFilter, kindFilter]);
 
   return (
     <BaseLayout>
@@ -526,6 +552,15 @@ export default function MatchPage() {
             maxTagCount="responsive"
           />
           <Segmented
+            value={kindFilter}
+            onChange={(v) => setKindFilter(v as "all" | "sublet" | "direct")}
+            options={[
+              { label: "全部类型", value: "all" },
+              { label: "🔑 转租", value: "sublet" },
+              { label: "直接房东", value: "direct" },
+            ]}
+          />
+          <Segmented
             value={posterFilter}
             onChange={(v) => setPosterFilter(v as "all" | "individual" | "agency")}
             options={[
@@ -545,13 +580,18 @@ export default function MatchPage() {
             ]}
             />
           </Tooltip>
-          {(stationFilter.length > 0 || sourceFilter.length > 0) && (
+          {(stationFilter.length > 0 ||
+            sourceFilter.length > 0 ||
+            kindFilter !== "all" ||
+            posterFilter !== "all") && (
             <Button
               type="link"
               size="small"
               onClick={() => {
                 setStationFilter([]);
                 setSourceFilter([]);
+                setKindFilter("all");
+                setPosterFilter("all");
               }}
             >
               清除筛选

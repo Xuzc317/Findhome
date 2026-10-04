@@ -244,3 +244,31 @@ def looks_wanted(*texts: Optional[str]) -> bool:
         if re.search(pattern, blob):
             return True
     return False
+
+
+# ---------- 转租 / 个人直租识别 ----------
+# 用户实测反馈：闲鱼宣传图/中介坑太多，转租贴是租客自己要走了，
+# 图片和价格通常是真的，中介基本不做这类。所以单独标出来供筛选。
+SUBLET_STRONG = [
+    r"转租", r"急转", r"个人转租", r"转租客", r"合同转让",
+    r"承接合同", r"接手合同", r"因工作调动", r"要离开深圳", r"回老家",
+    r"工作原因", r"换城市", r"到期转",
+]
+DIRECT_STRONG = [r"房东直租", r"个人直租", r"业主直租", r"无中介", r"免中介"]
+# 明确的中介特征（用来反向排除）
+AGENCY_TEXT = [r"中介勿扰", r"中介费", r"看房费", r"带看费"]
+
+RE_SUBLET = re.compile("|".join(SUBLET_STRONG))
+RE_DIRECT = re.compile("|".join(DIRECT_STRONG))
+
+
+def listing_kind(*texts: Optional[str]) -> str:
+    """判断房源性质：sublet（转租）/ direct（个人直租）/ normal（普通）"""
+    blob = " ".join(t for t in texts if t)
+    if not blob:
+        return "normal"
+    if RE_SUBLET.search(blob):
+        return "sublet"
+    if RE_DIRECT.search(blob):
+        return "direct"
+    return "normal"
