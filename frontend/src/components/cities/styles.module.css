@@ -1,0 +1,16 @@
+
+.cities {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 30px 0;
+}
+
+.city {
+  color: var(--main-color);
+  font-size: 18px;
+  font-weight: bold;
+  width: 90px;
+  text-align: center;
+  line-height: 40px;
+  cursor: pointer;
+}

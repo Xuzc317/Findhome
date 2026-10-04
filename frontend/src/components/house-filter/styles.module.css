@@ -1,0 +1,27 @@
+.container {
+  display: flex;
+  padding-bottom: 16px;
+  flex-direction: column;
+  width: 100%;
+  position: fixed;
+  background-color: white;
+  z-index: 999;
+}
+
+.sourceContainer {
+  display: flex;
+  align-items: center;
+}
+
+.sourceItem {
+  margin-right: 16px;
+  cursor: pointer;
+  padding: 6px 16px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+
+.sourceItemSel {
+  background-color: rgba(0,0,0,.03);
+  border-radius: 30px;
+}

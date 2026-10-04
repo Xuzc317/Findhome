@@ -1,0 +1,44 @@
+
+.container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.carousel {
+  width: 700px;
+  /* height: calc(100vh - 300px); */
+  margin-top: 32px;
+  background-color: rgba(0,0,0,.03);
+}
+
+.imageItem {
+  width: 100%;
+  height: calc(100vh - 200px);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+.imageItem img {
+  width: 100%;
+}
+
+.content {
+  width: 100%;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: bold;
+  color: #333;
+}
+
+.price {
+  margin-left: 12px;
+}
+.price span {
+  color: red;
+}

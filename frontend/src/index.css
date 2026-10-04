@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: white;
+  --main-color: #00a3ca;
+  --foreground: #171717;
+}
+
+body {
+  padding: 0;
+  margin: 0;
+  background-color: var(--background);
+}
+
+a {
+  color: var(--main-color);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+button {
+  border-radius: 30px !important;
+}

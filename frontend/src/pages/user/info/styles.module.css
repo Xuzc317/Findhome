@@ -1,0 +1,39 @@
+
+
+.container {
+  width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  padding-top: 32px;
+}
+
+.title {
+  font-size: 20px;
+  line-height: 20px;
+  margin-bottom: 20px;
+  color: var(--main-color);
+  flex: 1;
+}
+
+.content {
+  width: 100%;
+  position: relative;
+}
+
+.label {
+  width: 80px;
+  display: inline-block;
+  text-align: right;
+}
+
+
+.logout {
+  color: var(--main-color);
+  cursor: pointer;
+  position: absolute;
+  right: 32px;
+  top: 32px;
+  border: 1px solid var(--main-color);
+  padding: 6px 16px;
+  border-radius: 32px;
+}

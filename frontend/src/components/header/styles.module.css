@@ -1,0 +1,100 @@
+
+
+.container {
+  position: fixed;
+  left: 0;
+  background-color: white;
+  right: 0;
+  z-index: 999;
+}
+
+.content {
+  max-width: 1440px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 90px;
+  margin: 0 auto;
+}
+
+.titleContainer {
+  display: flex;
+  align-items: center;
+  min-width: 250px;
+}
+
+.titleContainer h1 {
+  font-size: 22px;
+  font-weight: bold;
+}
+
+.logo {
+  width: 40px;
+  height: 40px
+}
+
+.left {
+  @apply flex-1 mr-8 ml-8;
+}
+
+.right {
+  display: flex;
+  align-items: center;
+}
+
+.mobileHidden {
+  display: flex;
+}
+
+
+.pcHidden {
+  display: none;
+}
+
+@media screen and (max-width: 768px) {
+  .mobileHidden {
+    display: none;
+  }
+  .pcHidden {
+    display: flex;
+  }
+  .container {
+    flex-direction: column-reverse;
+    height: unset;
+    padding: 16px 0;
+  }
+  .interval {
+    flex: 1;
+  }
+  .right {
+    width: calc(100% - 32px);
+  }
+  .left {
+    width: calc(100% - 32px);
+    @apply flex-1 mr-0 ml-0 mt-4;
+  }
+  
+}
+
+
+.cityContainer {
+  display: flex;
+  align-items: center;
+  margin-right: 16px;
+  cursor: pointer;
+  padding: 6px 16px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  color: var(--main-color);
+  font-weight: bold;
+}
+.positioningIcon {
+  width: 22px;
+  margin-right: 8px;
+  
+}
+
+.placeholder {
+  height: 90px;
+}
