@@ -110,8 +110,52 @@ class MatchedHouse:
     old_small: bool
     geo_source: Optional[str]
     geo_precision: Optional[str]
+    # 发布者维度：闲鱼图片 URL 里带发布者 ID，可据此识别批量发布的机构/中介。
+    # 用户实测反馈"满意的三套全是宣传图"，一查正是发布量第一的账号（98 条在租），
+    # 所以这个信号对判断"图能不能信"很关键。
+    seller_id: Optional[str] = None
+    seller_listings: int = 1          # 该发布者在库在租条数
+    poster_type: str = "unknown"      # individual / agency / unknown
     reasons: List[str] = field(default_factory=list)
     caveats: List[str] = field(default_factory=list)
+
+
+import re as _re
+
+_SELLER_RE = _re.compile(r"!!(\d{10,})-")
+# 达到这个发布量就按"机构/中介"看待：个人房东极少同时挂这么多套
+AGENCY_THRESHOLD = 5
+
+
+def extract_seller_id(house: House) -> Optional[str]:
+    """从图片 URL 里取发布者 ID（闲鱼 CDN 路径带 `!!<sellerId>-` ）"""
+    try:
+        if house.images and house.images not in ("", "[]"):
+            for url in json.loads(house.images):
+                m = _SELLER_RE.search(url or "")
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
+def seller_listing_counts(db: Session, city: str) -> Dict[str, int]:
+    """统计每个发布者在库的在租条数（用于识别批量发布的机构）"""
+    counts: Dict[str, int] = {}
+    rows = db.query(House.images).filter(
+        House.city == city, House.images.isnot(None),
+        House.images != "[]", House.images != "").all()
+    for (images,) in rows:
+        try:
+            for url in json.loads(images):
+                m = _SELLER_RE.search(url or "")
+                if m:
+                    counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+                    break
+        except Exception:
+            continue
+    return counts
 
 
 def _station_lines(db: Session, station: MetroStation) -> List[str]:
@@ -221,6 +265,7 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
     walk_unknown = 0
 
     station_lines_cache: Dict[str, List[str]] = {}
+    seller_counts = seller_listing_counts(db, profile.city)
 
     for house, station, straight in within_straight:
         # 位置只精确到"站点附近"的房源：坐标就是站点坐标，距离必然是 0，
@@ -233,7 +278,12 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
                 continue
             if station.id not in station_lines_cache:
                 station_lines_cache[station.id] = _station_lines(db, station)
+            _sid = extract_seller_id(house)
+            _sn = seller_counts.get(_sid or "", 1)
             imprecise.append(MatchedHouse(
+                seller_id=_sid, seller_listings=_sn,
+                poster_type=("agency" if _sn >= AGENCY_THRESHOLD
+                             else ("individual" if _sid else "unknown")),
                 house_id=house.id, title=house.title, price=house.price,
                 layout_label=LAYOUT_LABELS.get(house.layout_key or "", "未知"),
                 source=house.source, source_url=house.source_url,
@@ -314,6 +364,9 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             station_lines_cache[station.id] = _station_lines(db, station)
 
         # ---------- 7) 逐条给出"为什么符合" ----------
+        seller_id = extract_seller_id(house)
+        seller_n = seller_counts.get(seller_id or "", 1)
+
         reasons = [
             f"{station.name}站 直线 {straight}m"
             + (f"／步行 {walk_minutes} 分钟（{walk_m}m）" if walk_minutes else "（步行未计算）"),
@@ -327,6 +380,9 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             reasons.append("新旧信号偏新：" + "/".join(condition.newness_signals[:3]))
 
         caveats = []
+        if seller_n >= AGENCY_THRESHOLD:
+            caveats.append(
+                f"该发布者在租 {seller_n} 套（疑似中介/机构），图片可能是宣传图，建议先要实拍视频")
         if condition.elevator is None:
             caveats.append(condition.elevator_hint or "电梯未标注，需现场/电话确认")
         if walk_minutes is None:
@@ -335,6 +391,9 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             caveats.append("坐标按地铁站近似，实际位置可能偏差")
 
         results.append(MatchedHouse(
+            seller_id=seller_id, seller_listings=seller_n,
+            poster_type=("agency" if seller_n >= AGENCY_THRESHOLD
+                         else ("individual" if seller_id else "unknown")),
             house_id=house.id, title=house.title, price=house.price,
             layout_label=LAYOUT_LABELS.get(house.layout_key or "", "未知"),
             source=house.source, source_url=house.source_url,
@@ -380,6 +439,10 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             "walkUnknown": walk_unknown,
             "matched": len(results),
             "pendingLocation": len(imprecise),
+            "agencyListings": sum(1 for m in results + imprecise
+                                  if m.poster_type == "agency"),
+            "individualListings": sum(1 for m in results + imprecise
+                                      if m.poster_type == "individual"),
             "walkApiCalls": walk_calls,
             "amapKeyMissing": walk_skipped_no_key,
         },

@@ -24,6 +24,9 @@ export interface MatchedHouse {
   old_small: boolean;
   geo_source: string | null;
   geo_precision: string | null;
+  seller_id: string | null;
+  seller_listings: number;
+  poster_type: "individual" | "agency" | "unknown";
   reasons: string[];
   caveats: string[];
   /** 前端补充：卡片图（由 /v3/houses 里取，匹配接口不返回图片） */
@@ -43,6 +46,8 @@ export interface MatchStats {
   walkUnknown: number;
   matched: number;
   pendingLocation: number;
+  agencyListings: number;
+  individualListings: number;
   walkApiCalls: number;
   amapKeyMissing: boolean;
 }

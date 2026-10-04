@@ -76,6 +76,31 @@ function ElevatorTag({ item }: { item: MatchedHouse }) {
   );
 }
 
+/** 发布者标签：机构批量发布 ≈ 中介，图片常为宣传图（用户实测踩过） */
+function PosterTag({ item }: { item: MatchedHouse }) {
+  if (item.poster_type === "agency") {
+    return (
+      <Tooltip
+        title={`该发布者在租 ${item.seller_listings} 套，疑似中介/机构。\n实测这类房源的图片多为宣传图，建议先要实拍视频再约看。`}
+      >
+        <Tag color="volcano" style={{ margin: 0, fontSize: 11 }}>
+          🏢 疑似中介 · {item.seller_listings}套
+        </Tag>
+      </Tooltip>
+    );
+  }
+  if (item.poster_type === "individual") {
+    return (
+      <Tooltip title="该发布者只挂了这一套，更像个人房东">
+        <Tag color="green" style={{ margin: 0, fontSize: 11 }}>
+          👤 个人房东
+        </Tag>
+      </Tooltip>
+    );
+  }
+  return null;
+}
+
 function MatchCard({ item }: { item: MatchedHouse }) {
   const walkText =
     item.walk_minutes != null
@@ -220,9 +245,12 @@ function MatchCard({ item }: { item: MatchedHouse }) {
             justifyContent: "space-between",
           }}
         >
-          <Tag color="magenta" style={{ margin: 0, fontSize: 11 }}>
-            {SOURCE_LABEL[item.source] || item.source}
-          </Tag>
+          <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <Tag color="magenta" style={{ margin: 0, fontSize: 11 }}>
+              {SOURCE_LABEL[item.source] || item.source}
+            </Tag>
+            <PosterTag item={item} />
+          </span>
           <a
             href={item.source_url}
             target="_blank"
@@ -249,6 +277,9 @@ export default function MatchPage() {
   const [stationFilter, setStationFilter] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"walk" | "price" | "newness">("walk");
+  const [posterFilter, setPosterFilter] = useState<"all" | "individual" | "agency">(
+    "all"
+  );
 
   useEffect(() => {
     service
@@ -328,7 +359,8 @@ export default function MatchPage() {
     const filtered = rawList.filter(
       (m) =>
         (stationFilter.length === 0 || stationFilter.includes(m.nearest_station)) &&
-        (sourceFilter.length === 0 || sourceFilter.includes(m.source))
+        (sourceFilter.length === 0 || sourceFilter.includes(m.source)) &&
+        (posterFilter === "all" || m.poster_type === posterFilter)
     );
     const sorted = [...filtered];
     if (sortBy === "walk") {
@@ -343,7 +375,7 @@ export default function MatchPage() {
       sorted.sort((a, b) => b.newness_score - a.newness_score);
     }
     return sorted;
-  }, [rawList, stationFilter, sourceFilter, sortBy]);
+  }, [rawList, stationFilter, sourceFilter, sortBy, posterFilter]);
 
   return (
     <BaseLayout>
@@ -385,6 +417,14 @@ export default function MatchPage() {
             {currentProfile.max_walk_minutes} 分钟 · 只要整租 · 已排除合租与求租帖
           </div>
         )}
+
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 12 }}
+          message="房源图由发布者上传，可能是宣传图，不等于实际房间"
+          description="用户实测：联系中介后被告知图片是宣传图。批量发布者（🏢 疑似中介）尤其如此——这类账号一次挂几十上百套，常用统一装修图。建议先要实拍视频，或到现场核对。"
+        />
 
         {error && (
           <Alert type="error" showIcon style={{ marginTop: 16 }} message={error} />
@@ -484,6 +524,15 @@ export default function MatchPage() {
             onChange={setSourceFilter}
             options={sourceOptions}
             maxTagCount="responsive"
+          />
+          <Segmented
+            value={posterFilter}
+            onChange={(v) => setPosterFilter(v as "all" | "individual" | "agency")}
+            options={[
+              { label: "全部发布者", value: "all" },
+              { label: "👤 个人房东", value: "individual" },
+              { label: "🏢 疑似中介", value: "agency" },
+            ]}
           />
           <Segmented
             value={sortBy}
