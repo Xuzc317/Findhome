@@ -29,6 +29,27 @@
 | 贝壳 | 线上重新抓取列表页，与库内记录逐条比对 | ✅ **5/5 一致**（`python verify_consistency.py --source beike`） |
 | 豆瓣 | 重新抓取帖子页比对标题 | ⚠️ **无法比对**：请求被平台风控中间页拦截（见下文） |
 
+## 端到端链路验证（前端）
+
+用 Playwright 驱动真实浏览器验证"平台数据最终能否被用户看到"：
+
+```
+python tests/test_ui_smoke.py --city 深圳     # 17/17 通过
+```
+
+| 验证项 | 结果 |
+|--------|------|
+| 筛选栏渲染（数据源/出租类型/发布时间/风险/价格/排除词） | ✅ |
+| 列表渲染真实房源卡片 | ✅ **17 张**（深圳贝壳数据） |
+| 卡片标题与价格 | ✅ 如「整租·泓瀚苑 3室2厅 南 / ￥4800」 |
+| 时间标注区分维护时间 | ✅ 显示 `2026-10-04(维护)` |
+| 点击卡片进入详情页 | ✅ |
+| 详情页「查看来源」链接 | ✅ 指向 `https://sz.zu.ke.com/zufang/SZ....html` |
+| 页面链接与 API `onlineURL` 一致 | ✅ |
+| JS 控制台错误 / 失败请求 | ✅ 0 / 0 |
+
+截图见 `docs/screenshots/`。
+
 豆瓣无法自动复验的原因：该 IP 在 08:11 成功采集后进入风控期，此后所有
 `group/*/discussion` 与 `group/topic/*` 请求都返回"请点击下方按钮继续浏览"中间页，
 持续 80 分钟以上未解除。按项目边界**不绕过**，因此：
@@ -208,6 +229,10 @@ python verify_consistency.py --limit 5
 
 # 7) 接口契约 + 筛选闭环自检
 python verify_api.py
+
+# 8) 前端端到端冒烟（可选，需 playwright）
+pip install playwright && python -m playwright install chromium
+python tests/test_ui_smoke.py --city 深圳
 ```
 
 ## 风控与礼节

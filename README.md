@@ -132,6 +132,10 @@ python verify_consistency.py --limit 5
 
 # 接口契约 + 筛选闭环自检（31 项，退出码 0 即全部通过）
 python verify_api.py
+
+# 前端端到端冒烟（可选，需 playwright，验证列表渲染 + 原始链接可打开）
+pip install playwright && python -m playwright install chromium
+python tests/test_ui_smoke.py --city 深圳
 ```
 
 少于 5 条真实房源的来源会被标记为未达标；演示数据（`demo.local`）会被标记为不可打开且不计入。
@@ -239,6 +243,7 @@ HouseSearch-local-v1/
 ├── verify_sources.py      # 各来源真实房源验收记录导出
 ├── verify_consistency.py  # 与平台当前页面的一致性校验
 ├── tests/test_parsers.py  # 解析器离线测试（71 项，无需联网）
+├── tests/test_ui_smoke.py # 前端端到端冒烟（可选，需 playwright）
 ├── start.py               # 启动脚本（backend/frontend/setup/seed）
 ├── crawl.py               # 爬虫 CLI
 └── requirements.txt

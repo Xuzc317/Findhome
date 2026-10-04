@@ -44,7 +44,11 @@ export default function HouseDetail() {
             </div>
           </div>
           <div className="mt-4">所在城市：{house.city}</div>
-          <div className="mt-4">发布时间：{house.publishDate}</div>
+          {/* 平台时间：发布时间；仅有维护时间时标注"(维护)"；都没有则显示"未知"，
+              不拿采集时间冒充发布时间 */}
+          <div className="mt-4">
+            发布时间：{house.timeText || "未知"}
+          </div>
           <div className="mt-4 text-gray-600 whitespace-pre-wrap">{getDomText(house.text)}</div>
           <a href={house.onlineURL} target="__black" className="mt-4 text-xl">
             查看来源

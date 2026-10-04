@@ -83,6 +83,9 @@ interface HouseDetail {
   price: number;
   pubTime: string;
   publishDate: string;
+  /** 平台时间展示文本：发布时间，或“日期(维护)”，缺失则为空 */
+  timeText?: string;
+  lastActiveDate?: string;
   rentType: number;
   reportNum?: string;
   source: string;

@@ -70,6 +70,13 @@ async def check_beike(limit: int) -> dict:
         await crawler.close()
 
     match = mismatch = unknown = 0
+    if not live:
+        # 列表页完全取不到（被拦截/限流），不能把这种情况说成“未出现在当前页”
+        print("  ⚠️ 列表页无法获取，本次无法比对（平台风控/限流）")
+        print(f"     最后状态: [{crawler.last_status}] {crawler.last_message}")
+        print(f"\n  结果: 一致 0 / 不一致 0 / 无法比对 {len(rows)}（列表页被拦截）")
+        return {"match": 0, "mismatch": 0, "unknown": len(rows)}
+
     for row in rows:
         page = live.get(row["source_id"])
         if page is None:
