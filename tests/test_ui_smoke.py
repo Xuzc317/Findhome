@@ -61,12 +61,26 @@ async def run(base: str, city: str, screenshot: str) -> int:
         print(f"\n【打开列表页】{base}/houses-list?city={city}")
         await page.goto(f"{base}/houses-list?city={city}", wait_until="networkidle")
 
-        # 筛选栏（本轮新增的筛选项）
+        # 筛选栏：常驻显示的区块（地铁选址/预算/房型/出租类型）
         body_text = await page.inner_text("body")
-        check("筛选栏渲染出「排除词」", "排除词" in body_text)
-        check("筛选栏渲染出「发布时间」", "发布时间" in body_text)
-        check("筛选栏渲染出「风险」", "风险" in body_text)
-        check("筛选栏渲染出「可信度≥70」", "可信度≥70" in body_text)
+        check("筛选栏渲染出「筛选条件」标题", "筛选条件" in body_text)
+        check("筛选栏渲染出「地铁选址」", "地铁选址" in body_text)
+        check("筛选栏渲染出「预算」", "预算" in body_text)
+        check("筛选栏渲染出「房型」", "房型" in body_text)
+        check("筛选栏渲染出房型档位「2房1厅」", "2房1厅" in body_text)
+        check("筛选栏渲染出「出租类型」且默认整租", "出租类型" in body_text and "整租" in body_text)
+
+        # 「更多筛选」默认折叠，展开后再校验其余条件
+        try:
+            await page.click("text=更多筛选", timeout=5000)
+            await page.wait_for_timeout(800)
+            expanded_text = await page.inner_text("body")
+            check("展开「更多筛选」后有「发布时间」", "发布时间" in expanded_text)
+            check("展开「更多筛选」后有「风险」", "风险" in expanded_text)
+            check("展开「更多筛选」后有「排除关键词」", "排除关键词" in expanded_text)
+            check("展开「更多筛选」后有「数据准备」", "数据准备" in expanded_text)
+        except Exception as e:
+            check("展开「更多筛选」", False, f"{type(e).__name__}: {e}")
 
         # 房源卡片
         try:
@@ -165,9 +179,19 @@ async def run(base: str, city: str, screenshot: str) -> int:
     real_errors = [e for e in console_errors if "favicon" not in e.lower()]
     check("无 JS 控制台错误", not real_errors,
           f"{len(real_errors)} 条" + (f": {real_errors[0][:80]}" if real_errors else ""))
-    check("无失败的网络请求", not failed_requests,
-          f"{len(failed_requests)} 条" +
-          (f": {failed_requests[0][:80]}" if failed_requests else ""))
+
+    # 地图瓦片是懒加载的 CDN 资源，关闭浏览器时会大量中断（net::ERR_ABORTED），
+    # 属于正常现象，不计入"失败请求"；只看我们自己的接口请求。
+    IGNORED_HOSTS = ("amap.com", "autonavi.com", "google-analytics.com",
+                     "googletagmanager.com", "favicon")
+    real_failures = [
+        r for r in failed_requests
+        if not any(host in r.lower() for host in IGNORED_HOSTS)
+    ]
+    check("无失败的业务请求（已排除地图瓦片与统计域名）", not real_failures,
+          f"{len(real_failures)} 条"
+          + (f": {real_failures[0][:80]}" if real_failures else "")
+          + f"（另有 {len(failed_requests) - len(real_failures)} 条地图瓦片中断，属正常）")
 
     print("\n" + "=" * 60)
     print(f"UI 冒烟结果: ✅ 通过 {PASSED} | ❌ 失败 {FAILED}")
