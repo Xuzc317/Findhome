@@ -119,6 +119,49 @@ async def collect_xianyu(stations: List[str], suffixes: List[str],
             "perStation": per_station}
 
 
+async def collect_beike(paths, city: str = "深圳", cdp_port: int = 9222,
+                        wait_ms: int = 6000) -> dict:
+    """通过浏览器采集贝壳列表页（复用 BeikeCrawler 的解析器）"""
+    from backend.crawlers.base import STATUS_OK
+    from backend.crawlers.beike import BeikeCrawler
+    from backend.crawlers.browser_fetch import fetch_html_via_browser
+    from backend.crawlers.manager import CrawlerManager
+    from backend.database import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    manager = CrawlerManager(db)
+    parser = BeikeCrawler(cookie="")   # 只借用它的解析方法，不用于发请求
+
+    total = total_new = 0
+    details = []
+    try:
+        async with BrowserSession(cdp_port=cdp_port) as session:
+            for path, label in paths:
+                url = path if path.startswith("http") else f"https://sz.zu.ke.com{path}"
+                try:
+                    html = await fetch_html_via_browser(session, url, wait_ms=wait_ms)
+                except Exception as e:
+                    print(f"  ❌ {label}: {type(e).__name__}: {str(e)[:60]}", flush=True)
+                    continue
+                houses, reason = parser._parse_list(html, city)
+                if not houses:
+                    print(f"  ⚪ {label}: 0 条（{(reason or parser.last_status)[:40]}）", flush=True)
+                else:
+                    inserted, updated = manager._process_houses(houses, "beike")
+                    total += len(houses)
+                    total_new += inserted
+                    prices = [h.price for h in houses if h.price]
+                    print(f"  ✅ {label}: 解析 {len(houses)} 条 → 新增 {inserted} 更新 {updated}"
+                          f" | 价格 {min(prices) if prices else '-'}~{max(prices) if prices else '-'}",
+                          flush=True)
+                details.append({"path": path, "label": label, "count": len(houses)})
+                await asyncio.sleep(QUERY_DELAY)
+    finally:
+        db.close()
+    return {"cards": total, "new": total_new, "details": details}
+
+
 async def collect_xiaohongshu(stations: List[str], suffixes: List[str],
                               city: str = "深圳", cdp_port: int = 9222,
                               wait_ms: int = 9000) -> dict:
@@ -198,7 +241,7 @@ async def collect_xiaohongshu(stations: List[str], suffixes: List[str],
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="通过常驻浏览器采集闲鱼/小红书")
-    parser.add_argument("platform", choices=["xianyu", "xiaohongshu"],
+    parser.add_argument("platform", choices=["xianyu", "xiaohongshu", "beike"],
                         default="xianyu", nargs="?", help="采集哪个平台")
     parser.add_argument("--station", action="append", default=[],
                         help="地铁站名，可重复；不传则用 --profile 里的站点")
@@ -211,10 +254,10 @@ def main() -> int:
     args = parser.parse_args()
 
     stations = list(args.station)
-    if not stations and args.profile:
+    if args.platform != "beike" and not stations and args.profile:
         from backend.services.match import Profile
         stations = Profile.load(args.profile).stations
-    if not stations:
+    if args.platform != "beike" and not stations:
         print("❌ 请用 --station 指定站点，或用 --profile 指定需求档案")
         return 1
 
@@ -224,6 +267,27 @@ def main() -> int:
     print(f"通过常驻浏览器采集闲鱼：{len(stations)} 个站 × {len(suffixes)} 个查询")
     print(f"站点：{'、'.join(stations)}")
     print("=" * 74, flush=True)
+
+    if args.platform == "beike":
+        # 贝壳按"区域 + 租型 + 价格区间"路径采集，与站点关键词无关
+        REGIONS = [("longhuaqu", "龙华区"), ("guangmingqu", "光明区"),
+                   ("nanshanqu", "南山区"), ("baoanqu", "宝安区")]
+        RENT = [("rt200600000001", "整租"), ("rt200600000002", "合租")]
+        paths = []
+        for region, rlabel in REGIONS:
+            for rent, tlabel in RENT:
+                paths.append((f"/zufang/{region}/{rent}/bp1200ep2500/",
+                              f"{rlabel}-{tlabel} 1200-2500"))
+                paths.append((f"/zufang/{region}/{rent}/bp1200ep2500/pg2/",
+                              f"{rlabel}-{tlabel} 1200-2500 p2"))
+        result = asyncio.run(collect_beike(paths, city=args.city,
+                                           cdp_port=args.port, wait_ms=args.wait_ms))
+        print("\n" + "=" * 74)
+        print(f"贝壳完成：解析 {result['cards']} 条 → 新增 {result['new']} 条")
+        print("=" * 74)
+        for d in result["details"]:
+            print(f"  {d['label']:26} {d['count']:4} 条")
+        return 0
 
     if args.platform == "xianyu":
         result = asyncio.run(collect_xianyu(stations, suffixes, city=args.city,

@@ -270,6 +270,19 @@ async def search_xiaohongshu(session: "BrowserSession", query: str,
         await session.close_login_popup()
         await session.page.wait_for_timeout(3000)
 
+    # 封面图是懒加载的：不滚动会拿到占位/空图（和闲鱼同一类问题）
+    for _ in range(3):
+        try:
+            await session.page.mouse.wheel(0, 1300)
+        except Exception:
+            break
+        await session.page.wait_for_timeout(1200)
+    try:
+        await session.page.evaluate("window.scrollTo(0, 0)")
+        await session.page.wait_for_timeout(900)
+    except Exception:
+        pass
+
     cards = await session.page.evaluate(
         r"""() => {
             const secs = Array.from(document.querySelectorAll('section[class*="note"]'));
@@ -293,7 +306,13 @@ async def search_xiaohongshu(session: "BrowserSession", query: str,
             }).filter(x => x.href && x.title);
         }"""
     )
+    # 同页反复出现的图一定是站点占位图，丢弃
+    from collections import Counter as _Counter
+    _cnt = _Counter(c.get("img") for c in cards if c.get("img"))
     for card in cards:
+        img = card.get("img")
+        if img and _cnt[img] >= 3:
+            card["img"] = ""
         card["query"] = query
     return cards
 
@@ -306,3 +325,18 @@ def xhs_is_listing(title: str, text: str = "") -> bool:
     if XHS_NOT_LISTING.search(title):
         return False
     return bool(XHS_IS_LISTING.search(blob))
+
+
+# ---------- 贝壳 ----------
+
+async def fetch_html_via_browser(session: "BrowserSession", url: str,
+                                 wait_ms: int = 6000) -> str:
+    """用浏览器打开页面并返回渲染后的 HTML
+
+    贝壳对非浏览器客户端（HTTP 直连）会返回登录页，即便带着登录 Cookie；
+    实测同一 Cookie 在真实浏览器里是正常登录态。所以这里用浏览器取 HTML，
+    再交给已有的解析器处理——解析逻辑不用重写，也避免去猜它的风控规则。
+    """
+    await session.page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    await session.page.wait_for_timeout(wait_ms)
+    return await session.page.content()

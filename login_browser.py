@@ -68,7 +68,7 @@ PLATFORMS: Dict[str, dict] = {
         "url": "https://sz.zu.ke.com/zufang",
         "hint": "点右上角「登录 / 注册」→ 用贝壳 App 扫码（贝壳列表页本身公开，登录主要用于降低验证码概率）",
         "domains": ("ke.com", "lianjia.com"),
-        "login_cookies": ("lianjia_token", "ke_uid", "lianjia_uuid"),
+        "login_cookies": ("lianjia_token", "ke_uid"),
         "env": "BEIKE_COOKIE",
     },
 }

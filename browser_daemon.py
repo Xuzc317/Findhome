@@ -65,7 +65,7 @@ PLATFORMS = {
     "beike": {
         "name": "贝壳找房",
         "url": "https://sz.zu.ke.com/zufang",
-        "login_cookies": ("lianjia_token", "ke_uid", "lianjia_uuid"),
+        "login_cookies": ("lianjia_token", "ke_uid"),
         "hint": "点右上角「登录/注册」→ 贝壳 App 扫码",
     },
 }
