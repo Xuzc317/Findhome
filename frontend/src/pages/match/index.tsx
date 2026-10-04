@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Empty, Segmented, Skeleton, Spin, Tag, Tooltip } from "antd";
+import {
+  Alert,
+  Badge,
+  Button,
+  Empty,
+  Segmented,
+  Select,
+  Skeleton,
+  Spin,
+  Tag,
+  Tooltip,
+} from "antd";
 import { Helmet } from "react-helmet";
 import Masonry from "react-masonry-css";
 import BaseLayout from "@/components/layout";
@@ -235,6 +246,9 @@ export default function MatchPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"precise" | "pending">("precise");
+  const [stationFilter, setStationFilter] = useState<string[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<"walk" | "price" | "newness">("walk");
 
   useEffect(() => {
     service
@@ -285,7 +299,51 @@ export default function MatchPage() {
     () => profiles.find((p) => p.name === profile)?.profile,
     [profiles, profile]
   );
-  const list = tab === "precise" ? result?.data || [] : result?.pendingLocation || [];
+  const rawList =
+    tab === "precise" ? result?.data || [] : result?.pendingLocation || [];
+
+  /** 可选的地铁站 / 平台（按当前 Tab 里实际出现的选项生成，避免选了没结果） */
+  const stationOptions = useMemo(() => {
+    const counter = new Map<string, number>();
+    rawList.forEach((m) =>
+      counter.set(m.nearest_station, (counter.get(m.nearest_station) || 0) + 1)
+    );
+    return [...counter.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ label: `${name}（${count}）`, value: name }));
+  }, [rawList]);
+
+  const sourceOptions = useMemo(() => {
+    const counter = new Map<string, number>();
+    rawList.forEach((m) => counter.set(m.source, (counter.get(m.source) || 0) + 1));
+    return [...counter.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([src, count]) => ({
+        label: `${SOURCE_LABEL[src] || src}（${count}）`,
+        value: src,
+      }));
+  }, [rawList]);
+
+  const list = useMemo(() => {
+    const filtered = rawList.filter(
+      (m) =>
+        (stationFilter.length === 0 || stationFilter.includes(m.nearest_station)) &&
+        (sourceFilter.length === 0 || sourceFilter.includes(m.source))
+    );
+    const sorted = [...filtered];
+    if (sortBy === "walk") {
+      sorted.sort(
+        (a, b) =>
+          (a.walk_minutes ?? 999) - (b.walk_minutes ?? 999) ||
+          a.straight_m - b.straight_m
+      );
+    } else if (sortBy === "price") {
+      sorted.sort((a, b) => (a.price ?? 99999) - (b.price ?? 99999));
+    } else {
+      sorted.sort((a, b) => b.newness_score - a.newness_score);
+    }
+    return sorted;
+  }, [rawList, stationFilter, sourceFilter, sortBy]);
 
   return (
     <BaseLayout>
@@ -396,6 +454,61 @@ export default function MatchPage() {
               },
             ]}
           />
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="按地铁站筛选"
+            style={{ minWidth: 260, maxWidth: 520, flex: "1 1 260px" }}
+            value={stationFilter}
+            onChange={setStationFilter}
+            options={stationOptions}
+            maxTagCount="responsive"
+          />
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="按平台筛选"
+            style={{ minWidth: 180, maxWidth: 320, flex: "0 1 200px" }}
+            value={sourceFilter}
+            onChange={setSourceFilter}
+            options={sourceOptions}
+            maxTagCount="responsive"
+          />
+          <Segmented
+            value={sortBy}
+            onChange={(v) => setSortBy(v as "walk" | "price" | "newness")}
+            options={[
+              { label: "步行最短", value: "walk" },
+              { label: "价格最低", value: "price" },
+              { label: "最新", value: "newness" },
+            ]}
+          />
+          {(stationFilter.length > 0 || sourceFilter.length > 0) && (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                setStationFilter([]);
+                setSourceFilter([]);
+              }}
+            >
+              清除筛选
+            </Button>
+          )}
+          <span style={{ fontSize: 13, color: "#8c8c8c" }}>
+            显示 {list.length} / {rawList.length} 条
+          </span>
         </div>
 
         {tab === "pending" && (

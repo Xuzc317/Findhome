@@ -82,6 +82,7 @@ async def run_match(
         amap.close()
 
     matched = result.get("matched") or []
+    pending = result.get("pendingLocation") or []
     return {
         "code": 0,
         "success": result.get("success", True),
@@ -90,5 +91,8 @@ async def run_match(
         "stats": result.get("stats"),
         "total": len(matched),
         "data": [m.__dict__ for m in matched],
+        # 位置待确认的单独一栏。这里曾经漏掉过，导致前端那个 Tab 永远是空的
+        # （角标数字来自 stats 所以看着正常，列表却是 undefined）。
+        "pendingLocation": [m.__dict__ for m in pending],
         "report": match_service.render_report(result),
     }
