@@ -12,7 +12,30 @@ export default class HousesService extends BaseService {
     return item;
   }
 
+  /**
+   * 搜索房源（带总数），用于分页与"共 N 套"展示
+   */
+  async searchHouses(props: GetHousesParams): Promise<{
+    list: HouseListItem[];
+    total: number;
+    hasMore: boolean;
+  }> {
+    const params = this.buildParams(props);
+    return this.get<any>(`/v3/houses`, params).then((res: any) => ({
+      list: (res?.data || []).map((item: HouseListItem) =>
+        this.normalizeHouse(item)
+      ),
+      total: res?.total ?? 0,
+      hasMore: res?.hasMore ?? false,
+    }));
+  }
+
   async getHouses(props: GetHousesParams): Promise<HouseListItem[]> {
+    const result = await this.searchHouses(props);
+    return result.list;
+  }
+
+  private buildParams(props: GetHousesParams) {
     const params = { page: props.page, pageSize: props.pageSize || 20 } as any;
     if (props.city) params.city = props.city;
     if (props.source && props.source !== "all") params.source = props.source;
@@ -27,6 +50,15 @@ export default class HousesService extends BaseService {
     if (props.minConfidenceScore) {
       params.minConfidenceScore = props.minConfidenceScore;
     }
+    // 出租类型多选（"3"=只看整租；空字符串=不限）
+    if (props.rentTypes !== undefined && props.rentTypes !== "") {
+      params.rentTypes = props.rentTypes;
+    }
+    // 房型档位多选
+    if (props.layouts) params.layouts = props.layouts;
+    // 地铁站 + 步行距离
+    if (props.stationId) params.stationId = props.stationId;
+    if (props.walkMaxM) params.walkMaxM = props.walkMaxM;
     if (
       props.rentType !== undefined && props.rentType !== null &&
       props.rentType != -1
@@ -36,11 +68,9 @@ export default class HousesService extends BaseService {
     if (props.intervalDay && props.intervalDay != -1) {
       params.intervalDay = props.intervalDay;
     }
+    if (props.sortBy) params.sortBy = props.sortBy;
 
-    return this.get<HouseListItem[]>(`/v3/houses`, params).then((res) => {
-      const list = res.data;
-      return list.map((item: HouseListItem) => this.normalizeHouse(item));
-    });
+    return params;
   }
 
   async getMapHouses(props: GetMapHousesParams): Promise<HouseListItem[]> {

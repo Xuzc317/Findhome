@@ -6,6 +6,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+import re
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,7 +51,52 @@ class Settings(BaseSettings):
     commute_destination_lng: float = 0.0
     commute_destination_lat: float = 0.0
 
+    # 高德「Web服务」Key（地理编码/POI/步行路径/地铁线路；与前端 JS Key 不同）
+    # 复用上面的 amap_web_key 字段
+
+    # ==================== 大模型 ====================
+    # 供应商选择: auto / deepseek / doubao / none
+    llm_provider: str = "auto"
+    llm_timeout: float = 60.0
+    llm_max_images: int = 2          # 单条房源最多分析几张图（控制成本）
+
+    # DeepSeek（文本，OpenAI 兼容）
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
+
+    # 豆包 / 火山方舟（文本 + 图片理解）
+    doubao_api_key: str = ""         # 也可用 ARK_API_KEY
+    doubao_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_model: str = ""           # 填方舟的「接入点 ID」(ep-xxxx) 或模型名
+
+    # 是否允许把房源图片提交给大模型做位置/信息抽取
+    llm_vision_enabled: bool = True
+
 
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+# 明显的占位符/示例值，视为"未配置"。
+# 否则 .env.example 拷过来的 your_xxx_here 会被当成真 Key，
+# 一边报"已配置"一边被平台拒绝，很难排查。
+PLACEHOLDER_PATTERN = re.compile(
+    r"(your[_-]|_here$|^xxx|changeme|填入|示例|placeholder|^<.*>$)", re.IGNORECASE
+)
+
+
+def looks_like_placeholder(value: str) -> bool:
+    """判断一个 Key/Cookie 是否仍是模板占位符"""
+    if not value:
+        return True
+    value = value.strip()
+    if len(value) < 8:
+        return True
+    return bool(PLACEHOLDER_PATTERN.search(value))
+
+
+def is_configured(value: str) -> bool:
+    """既非空、也不是占位符，才算真正配置了"""
+    return bool(value) and not looks_like_placeholder(value)

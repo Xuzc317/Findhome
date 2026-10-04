@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db
-from backend.routers import cities, houses, sources
+from backend.routers import cities, geo, houses, metro, sources
 from backend.routers import config as config_router
 
 
@@ -38,6 +38,8 @@ app.add_middleware(
 # 注册路由
 app.include_router(houses.router, prefix="/api", tags=["houses"])
 app.include_router(cities.router, prefix="/api", tags=["cities"])
+app.include_router(metro.router, prefix="/api", tags=["metro"])
+app.include_router(geo.router, prefix="/api", tags=["geo"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(config_router.router, prefix="/api", tags=["config"])
 

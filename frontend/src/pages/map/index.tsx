@@ -23,7 +23,16 @@ import styles from "./styles.module.css";
 // 高德地图 Key 只能来自本地环境变量（frontend/.env 的 VITE_AMAP_KEY），
 // 不硬编码到代码仓库中。未配置时地图页会给出明确提示，而不是加载失败的脚本。
 const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || "";
+const AMAP_SECURITY_CODE = import.meta.env.VITE_AMAP_SECURITY_CODE || "";
 const AMAP_KEY_MISSING = !AMAP_KEY;
+
+// JS API v2.0 要求在使用安全密钥时先声明，否则地图会鉴权失败。
+// 安全密钥本身是前端公开配置（会随打包产物下发），放 .env 只是为了不写死在仓库里。
+if (typeof window !== "undefined" && AMAP_SECURITY_CODE) {
+  (window as any)._AMapSecurityConfig = {
+    securityJsCode: AMAP_SECURITY_CODE,
+  };
+}
 const AMAP_SCRIPT_ID = "house-search-amap";
 const AMAP_UI_SCRIPT_ID = "house-search-amap-ui";
 

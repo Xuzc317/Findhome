@@ -2,11 +2,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from backend.database import get_db
-from backend.models import House
+from backend.models import House, MetroStation
 from backend.schemas import (
     HouseResponse, HouseSearchParams, HouseSearchResponse,
     MapHouseItem, MapHouseQuery
 )
+from backend.services import metro as metro_service
 from backend.services.search import HouseSearchService
 from backend.services.risk import RiskScorer
 from backend.services.dedup import DedupService
@@ -49,6 +50,20 @@ async def get_houses(
     min_confidence_score: Optional[int] = Query(None, description="最低可信度评分"),
     minConfidenceScore: Optional[int] = Query(None, description="最低可信度评分(camelCase)"),
     hide_duplicates: bool = Query(True, description="隐藏重复房源"),
+    # 房型（多选，逗号分隔）：studio,1b1l,2b1l,3b1l,4b+
+    layouts: Optional[str] = Query(None, description="房型档位，逗号分隔"),
+    layout: Optional[str] = Query(None, description="房型档位（单选别名）"),
+    # 出租类型多选（逗号分隔）：3=整租 1=合租
+    rent_types: Optional[str] = Query(None, description="出租类型多选，逗号分隔"),
+    rentTypes: Optional[str] = Query(None, description="出租类型多选(camelCase)"),
+    # 地铁站 + 步行距离
+    station_id: Optional[str] = Query(None, description="地铁站ID"),
+    stationId: Optional[str] = Query(None, description="地铁站ID(camelCase)"),
+    station: Optional[str] = Query(None, description="地铁站名（与 stationId 二选一）"),
+    walk_max_m: Optional[int] = Query(None, description="步行距离上限(米)"),
+    walkMaxM: Optional[int] = Query(None, description="步行距离上限(米)(camelCase)"),
+    only_with_coord: bool = Query(False, description="只返回有坐标的房源"),
+    onlyWithCoord: Optional[bool] = Query(None, description="只返回有坐标的房源(camelCase)"),
     db: Session = Depends(get_db)
 ):
     """搜索房源列表 (v3 API，兼容前端 House-Map.newUI)
@@ -64,6 +79,8 @@ async def get_houses(
         from_price=from_price if from_price is not None else fromPrice,
         to_price=to_price if to_price is not None else toPrice,
         rent_type=rent_type if rent_type is not None else rentType,
+        rent_types=rent_types or rentTypes,
+        layouts=layouts or layout,
         interval_day=interval_day if interval_day is not None else intervalDay,
         page=page,
         page_size=page_size or pageSize or 20,
@@ -77,18 +94,46 @@ async def get_houses(
         min_confidence_score=(min_confidence_score
                               if min_confidence_score is not None else minConfidenceScore),
         hide_duplicates=hide_duplicates,
+        only_with_coord=(only_with_coord if onlyWithCoord is None else onlyWithCoord),
     )
+
+    # 地铁站：允许用站名代替 ID
+    station_id = station_id or stationId
+    station_obj = None
+    if not station_id and station:
+        city_for_station = city or "深圳"
+        station_obj = metro_service.get_station(db, city_for_station, station)
+        if station_obj is not None:
+            station_id = station_obj.id
+
+    params.station_id = station_id
+    params.walk_max_m = walk_max_m if walk_max_m is not None else walkMaxM
 
     service = HouseSearchService(db)
     houses, total = service.search(params)
 
+    # 带上到所选站点的真实步行距离（只读缓存，不在这里发请求）
+    distance_map = service.station_distances([h.id for h in houses], station_id) \
+        if station_id else {}
+
+    data = [_house_to_response(h, distance_map.get(h.id)) for h in houses]
+
+    if station_obj is None and station_id:
+        station_obj = db.query(MetroStation).filter(MetroStation.id == station_id).first()
+
     return {
         "code": 0,
-        "data": [_house_to_response(h) for h in houses],
+        "data": data,
         "total": total,
         "page": params.page,
         "pageSize": params.page_size,
         "hasMore": (params.page + 1) * params.page_size < total,
+        "station": ({
+            "id": station_obj.id, "name": station_obj.name,
+            "lng": station_obj.lng, "lat": station_obj.lat,
+            "hasCoord": station_obj.lng is not None,
+        } if station_obj else None),
+        "walkMaxM": params.walk_max_m,
     }
 
 
@@ -259,8 +304,8 @@ def _time_display_text(house: House) -> str:
     return ""
 
 
-def _house_to_response(house: House) -> dict:
-    """将 House ORM 对象转换为响应字典（兼容前端字段名）"""
+def _house_to_response(house: House, distance=None) -> dict:
+    """将 House ORM 对象转换为响应字典（兼容前端字段名 + 新增筛选字段）"""
     # 解析图片
     pictures = []
     try:
@@ -328,4 +373,30 @@ def _house_to_response(house: House) -> dict:
         "commuteDuration": house.commute_duration,
         "commuteDistance": house.commute_distance,
         "reportNum": "0",
+
+        # ---- 房型（由平台原文解析，解析不出为 null）----
+        "bedrooms": house.bedrooms,
+        "livingRooms": house.living_rooms,
+        "layoutKey": house.layout_key,
+        "layoutLabel": _layout_label(house.layout_key),
+        "layoutConfidence": house.layout_confidence,
+        "layoutEvidence": house.layout_evidence,
+
+        # ---- 位置溯源：坐标是平台给的还是推断的，界面必须能区分 ----
+        "geoSource": house.geo_source or ("platform" if house.longitude is not None else None),
+        "geoPrecision": house.geo_precision,
+        "geoConfidence": house.geo_confidence,
+        "geoNote": house.geo_note,
+        "hasCoord": house.longitude is not None and house.latitude is not None,
+
+        # ---- 到所选地铁站的真实步行距离（未计算则为 null）----
+        "walkMeters": distance.walk_meters if distance else None,
+        "walkMinutes": distance.walk_minutes if distance else None,
+        "straightMeters": distance.straight_meters if distance else None,
+        "walkStatus": distance.status if distance else None,
     }
+
+
+def _layout_label(key) -> str:
+    from backend.services.layout import LAYOUT_LABELS
+    return LAYOUT_LABELS.get(key or "", "")

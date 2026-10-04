@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc, asc
-from backend.models import House
+from backend.models import House, StationDistance
 from backend.schemas import HouseSearchParams
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 
 
@@ -48,8 +48,13 @@ class HouseSearchService:
             for column in cls.TEXT_COLUMNS
         ])
 
-    def search(self, params: HouseSearchParams) -> Tuple[List[House], int]:
-        """搜索房源，返回 (房源列表, 总数)"""
+    def search(self, params: HouseSearchParams,
+               with_station_id: Optional[str] = None) -> Tuple[List[House], int]:
+        """搜索房源，返回 (房源列表, 总数)
+
+        Args:
+            with_station_id: 指定后，返回的房源会带上到该站的步行距离（已缓存的）
+        """
         query = self.db.query(House)
 
         # 基础筛选
@@ -68,9 +73,33 @@ class HouseSearchService:
         if params.to_price is not None:
             query = query.filter(House.price <= params.to_price)
 
-        # 租房类型
-        if params.rent_type is not None and params.rent_type != -1:
+        # 出租类型：优先多选，其次单选
+        rent_types = self._parse_int_list(params.rent_types)
+        if rent_types:
+            query = query.filter(House.rent_type.in_(rent_types))
+        elif params.rent_type is not None and params.rent_type != -1:
             query = query.filter(House.rent_type == params.rent_type)
+
+        # 房型档位
+        layouts = self._parse_str_list(params.layouts)
+        if layouts:
+            query = query.filter(House.layout_key.in_(layouts))
+
+        # 有坐标（地图/地铁筛选场景）
+        if params.only_with_coord:
+            query = query.filter(House.longitude.isnot(None),
+                                 House.latitude.isnot(None))
+
+        # 地铁站步行距离（只认真实步行结果，no_route 不参与）
+        if params.station_id:
+            query = query.join(
+                StationDistance,
+                and_(StationDistance.house_id == House.id,
+                     StationDistance.station_id == params.station_id,
+                     StationDistance.status == "ok"),
+            )
+            if params.walk_max_m:
+                query = query.filter(StationDistance.walk_meters <= params.walk_max_m)
 
         # 发布时间筛选
         # 有效时间 = 发布时间，缺失时回退到平台展示的“最近维护时间”；
@@ -121,7 +150,11 @@ class HouseSearchService:
         total = query.count()
 
         # 排序（NULL 值统一排在最后，避免“价格未知”的房源占据价格排序首位）
-        sort_field = self.SORT_FIELDS.get(params.sort_by, House.publish_time)
+        # 走地铁筛选时，distance/walk 排序按真实步行距离
+        if params.sort_by in ("distance", "walk", "station") and params.station_id:
+            sort_field = StationDistance.walk_meters
+        else:
+            sort_field = self.SORT_FIELDS.get(params.sort_by, House.publish_time)
         null_rank = sort_field.is_(None)
         if params.sort_order == "desc":
             query = query.order_by(null_rank, desc(sort_field), desc(House.create_time))
@@ -171,3 +204,33 @@ class HouseSearchService:
             query = query.filter(House.city == city)
         query = query.group_by(House.source)
         return {row[0]: row[1] for row in query.all()}
+
+    # ---------- 工具 ----------
+
+    @staticmethod
+    def _parse_int_list(value: Optional[str]) -> List[int]:
+        if not value:
+            return []
+        result = []
+        for token in str(value).replace("，", ",").split(","):
+            token = token.strip()
+            if token.lstrip("-").isdigit():
+                result.append(int(token))
+        return result
+
+    @staticmethod
+    def _parse_str_list(value: Optional[str]) -> List[str]:
+        if not value:
+            return []
+        return [t.strip() for t in str(value).replace("，", ",").split(",") if t.strip()]
+
+    def station_distances(self, house_ids: List[str],
+                          station_id: str) -> dict:
+        """批量取房源到指定站点的步行距离（只返回已算好的）"""
+        if not house_ids or not station_id:
+            return {}
+        rows = self.db.query(StationDistance).filter(
+            StationDistance.house_id.in_(house_ids),
+            StationDistance.station_id == station_id,
+        ).all()
+        return {row.house_id: row for row in rows}

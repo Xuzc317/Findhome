@@ -29,6 +29,7 @@ from backend.crawlers.xianyu import XianyuCrawler
 from backend.crawlers.xiaohongshu import XiaohongshuCrawler
 from backend.models import CrawlLog, House
 from backend.services.dedup import DedupService
+from backend.services.layout import parse_layout
 from backend.services.risk import RiskScorer
 
 # 需要落库到 CrawlLog.status 的取值（success 之外的均为“未成功”）
@@ -197,6 +198,16 @@ class CrawlerManager:
         seen_urls = set()
         for raw in raw_houses:
             data = crawler_class.normalize(raw)
+
+            # 房型结构化：只从平台原文解析，解析不出留空
+            layout = parse_layout(raw.title, raw.description,
+                                  rent_type=raw.rent_type, room_type=raw.room_type)
+            data["bedrooms"] = layout.bedrooms
+            data["living_rooms"] = layout.living_rooms
+            data["layout_key"] = layout.layout_key
+            data["layout_confidence"] = layout.confidence
+            data["layout_evidence"] = (layout.evidence or "")[:255] or None
+
             url = data.get("source_url")
             if url and url in seen_urls:
                 continue  # 同一批次内按链接去重
@@ -237,6 +248,16 @@ class CrawlerManager:
                 existing.room_type = house.room_type or existing.room_type
                 existing.area_size = house.area_size or existing.area_size
                 existing.orientation = house.orientation or existing.orientation
+                # 房型：新解析结果置信度更高时才覆盖
+                if house.layout_key and (
+                    not existing.layout_key
+                    or (house.layout_confidence or 0) > (existing.layout_confidence or 0)
+                ):
+                    existing.bedrooms = house.bedrooms
+                    existing.living_rooms = house.living_rooms
+                    existing.layout_key = house.layout_key
+                    existing.layout_confidence = house.layout_confidence
+                    existing.layout_evidence = house.layout_evidence
                 if house.raw_data:
                     existing.raw_data = house.raw_data
                 existing.update_time = datetime.now()

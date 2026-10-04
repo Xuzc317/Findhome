@@ -66,6 +66,19 @@ def init_db():
 _LIGHT_MIGRATIONS = {
     "houses": {
         "last_active_time": "DATETIME",
+        # 房型结构化
+        "bedrooms": "INTEGER",
+        "living_rooms": "INTEGER",
+        "layout_key": "VARCHAR(16)",
+        "layout_confidence": "INTEGER",
+        "layout_evidence": "VARCHAR(255)",
+        # 地理定位溯源
+        "geo_source": "VARCHAR(24)",
+        "geo_precision": "VARCHAR(24)",
+        "geo_confidence": "INTEGER",
+        "geo_query": "VARCHAR(255)",
+        "geo_note": "VARCHAR(255)",
+        "geo_updated_at": "DATETIME",
     },
 }
 

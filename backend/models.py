@@ -43,9 +43,17 @@ class House(Base):
     # 价格与房型
     price = Column(Integer, nullable=True, comment="月租金")
     rent_type = Column(Integer, default=0, comment="出租类型: 0未知 1合租 2单间 3整租 4公寓")
-    room_type = Column(String(64), nullable=True, comment="房型描述")
+    room_type = Column(String(64), nullable=True, comment="房型描述(平台原文)")
     area_size = Column(Float, nullable=True, comment="面积")
     orientation = Column(String(32), nullable=True, comment="朝向")
+
+    # 房型结构化（由标题/正文解析，解析不出则留空，不猜测）
+    bedrooms = Column(Integer, nullable=True, comment="卧室数(0=单间/开间)")
+    living_rooms = Column(Integer, nullable=True, comment="客厅数")
+    layout_key = Column(String(16), nullable=True, index=True,
+                        comment="房型档位: studio/1b1l/2b1l/3b1l/4b+/unknown")
+    layout_confidence = Column(Integer, nullable=True, comment="房型解析置信度 0-100")
+    layout_evidence = Column(String(255), nullable=True, comment="房型判定依据原文片段")
 
     # 时间
     publish_time = Column(DateTime, nullable=True, comment="发布时间(平台未展示则为空)")
@@ -80,12 +88,24 @@ class House(Base):
     commute_duration = Column(Integer, nullable=True, comment="通勤时间(分钟)")
     commute_distance = Column(Float, nullable=True, comment="通勤距离(公里)")
 
+    # 地理定位溯源：坐标可能是平台给的，也可能是我们根据文字/图片推断的，
+    # 必须记录来源与精度，界面上要能区分，绝不把推断值当成平台事实。
+    geo_source = Column(String(24), nullable=True,
+                        comment="坐标来源: platform/amap_poi/amap_geocode/llm_text/llm_image/manual")
+    geo_precision = Column(String(24), nullable=True,
+                           comment="精度: building/community/street/district/station/unknown")
+    geo_confidence = Column(Integer, nullable=True, comment="定位置信度 0-100")
+    geo_query = Column(String(255), nullable=True, comment="实际用于地理编码的文本")
+    geo_note = Column(String(255), nullable=True, comment="定位说明/命中依据")
+    geo_updated_at = Column(DateTime, nullable=True, comment="定位更新时间")
+
     # 索引优化
     __table_args__ = (
         Index('idx_city_source', 'city', 'source'),
         Index('idx_price', 'price'),
         Index('idx_pub_time', 'publish_time'),
         Index('idx_source_url', 'source_url'),
+        Index('idx_layout', 'city', 'layout_key'),
     )
 
 
@@ -115,3 +135,80 @@ class SourceConfig(Base):
     last_crawl_time = Column(DateTime, nullable=True, comment="上次采集时间")
     status = Column(String(20), default="pending", comment="状态: pending/ready/error")
     error_message = Column(Text, nullable=True, comment="错误信息")
+
+
+# ==================== 地铁数据 ====================
+
+class MetroLine(Base):
+    """地铁线路"""
+    __tablename__ = "metro_lines"
+
+    id = Column(String(32), primary_key=True, default=generate_uuid)
+    city = Column(String(64), nullable=False, index=True, comment="城市")
+    name = Column(String(64), nullable=False, comment="线路名，如 1号线")
+    alias = Column(String(64), nullable=True, comment="别名，如 罗宝线")
+    color = Column(String(16), nullable=True, comment="线路色")
+    status = Column(String(20), default="operating", comment="operating/building")
+    sort_order = Column(Integer, default=0, comment="展示排序")
+    source = Column(String(24), nullable=True, comment="数据来源: static/amap")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        Index('idx_metro_line_city_name', 'city', 'name', unique=True),
+    )
+
+
+class MetroStation(Base):
+    """地铁站点（站点为主体，换乘站只存一条，通过关联表挂多条线路）"""
+    __tablename__ = "metro_stations"
+
+    id = Column(String(32), primary_key=True, default=generate_uuid)
+    city = Column(String(64), nullable=False, index=True, comment="城市")
+    name = Column(String(64), nullable=False, comment="站点名，如 深大")
+    lng = Column(Float, nullable=True, comment="经度（无来源则留空）")
+    lat = Column(Float, nullable=True, comment="纬度（无来源则留空）")
+    coord_source = Column(String(24), nullable=True, comment="坐标来源: static/amap")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        Index('idx_metro_station_city_name', 'city', 'name', unique=True),
+    )
+
+
+class MetroLineStation(Base):
+    """线路-站点关联（含站序）"""
+    __tablename__ = "metro_line_stations"
+
+    id = Column(String(32), primary_key=True, default=generate_uuid)
+    line_id = Column(String(32), nullable=False, index=True)
+    station_id = Column(String(32), nullable=False, index=True)
+    seq = Column(Integer, default=0, comment="线路内站序，从1开始")
+
+    __table_args__ = (
+        Index('idx_line_station', 'line_id', 'station_id', unique=True),
+    )
+
+
+class StationDistance(Base):
+    """房源到地铁站的距离（缓存真实步行路径结果，可重复计算）
+
+    只存高德返回的真实步行数据；没有坐标或未计算时不写行，
+    界面上显示为“未计算”，不估算。
+    """
+    __tablename__ = "station_distances"
+
+    id = Column(String(32), primary_key=True, default=generate_uuid)
+    house_id = Column(String(32), nullable=False, index=True)
+    station_id = Column(String(32), nullable=False, index=True)
+    walk_meters = Column(Integer, nullable=True, comment="步行路径距离(米)")
+    walk_minutes = Column(Integer, nullable=True, comment="步行耗时(分钟)")
+    straight_meters = Column(Integer, nullable=True, comment="直线距离(米)，仅作参考")
+    provider = Column(String(24), default="amap", comment="数据来源")
+    status = Column(String(20), default="ok", comment="ok/no_route/error")
+    message = Column(String(255), nullable=True, comment="失败原因")
+    computed_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        Index('idx_house_station', 'house_id', 'station_id', unique=True),
+        Index('idx_station_walk', 'station_id', 'walk_meters'),
+    )
