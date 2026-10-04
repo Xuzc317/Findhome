@@ -80,8 +80,23 @@ cp .env.example .env                # 后端配置（Cookie / 通勤目的地）
 cp frontend/.env.example frontend/.env   # 前端配置（高德 Key）
 ```
 
-- `.env`：高德 Web Key、各平台 Cookie、通勤目的地
-- `frontend/.env`：`VITE_AMAP_KEY`（高德 JS API Key，地图页必需，不填则回退到内置的旧 Key，很可能因域名限制而无法加载）
+- `.env`（后端，**所有密钥都放这里**）：
+  - `AMAP_WEB_KEY`：高德「**Web服务**」Key —— 后端的地理编码 / POI / 步行路径 / 地铁同步
+  - `AMAP_KEY` + `AMAP_SECURITY_CODE`：高德「**Web端(JS API)**」Key 与安全密钥 —— 前端地图
+  - `DEEPSEEK_API_KEY` / `DOUBAO_API_KEY`：大模型（用于推断房源位置）
+  - 各平台 Cookie（用 `python import_cookie.py` 导入，不要手写）
+- `frontend/.env`：**留空即可**。高德 JS Key 由后端 `/api/config` 运行时下发，
+  写进前端会被 Vite 内联进 `build/assets/*.js`，分享构建目录就泄漏 Key
+
+> 两类高德 Key **不通用**：把 JS Key 填到 `AMAP_WEB_KEY` 会返回
+> `10009 请求 Key 与绑定平台不符`。建议给 JS Key 配置域名白名单作为第二道防线。
+
+提交/推送前建议跑一次敏感信息扫描（CI 也会跑）：
+
+```bash
+python check_secrets.py          # 工作区 + 跟踪文件 + 全历史
+python check_secrets.py --fast   # 跳过历史，秒级完成
+```
 
 ### 3. 启动
 

@@ -51,6 +51,9 @@ jobs:
           python import_cookie.py --status
           python import_cookie.py --check
 
+      - name: 敏感信息扫描（红线：密钥/Cookie/.env 不进 Git）
+        run: python check_secrets.py
+
   frontend:
     name: 前端构建检查
     runs-on: ubuntu-latest

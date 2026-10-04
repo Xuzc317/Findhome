@@ -30,8 +30,13 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{DATA_DIR / 'houses.db'}"
 
     # 高德地图
-    amap_key: str = ""
+    # 后端 REST 用（地理编码/POI/步行路径/地铁）：服务平台必须选「Web服务」
     amap_web_key: str = ""
+    # 前端地图用（JS API）：服务平台选「Web端(JS API)」，配套安全密钥
+    # 这两项只在后端 .env 保存，由 /api/config 运行时下发，
+    # 不写进 frontend/.env，避免被 Vite 内联进静态产物
+    amap_key: str = ""
+    amap_security_code: str = ""
 
     # 服务器
     host: str = "0.0.0.0"

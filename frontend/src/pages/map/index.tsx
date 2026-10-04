@@ -1,4 +1,4 @@
-import { HomeFilterOptions } from "@/constant";
+import { HomeFilterOptions, API_BASE_URL } from "@/constant";
 import { useCities } from "@/hook/cities";
 import { useUserInfo } from "@/hook/user";
 import { housesService } from "@/services";
@@ -20,19 +20,37 @@ import { Helmet } from "react-helmet";
 import { useSearchParams } from "react-router-dom";
 import styles from "./styles.module.css";
 
-// 高德地图 Key 只能来自本地环境变量（frontend/.env 的 VITE_AMAP_KEY），
-// 不硬编码到代码仓库中。未配置时地图页会给出明确提示，而不是加载失败的脚本。
-const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || "";
-const AMAP_SECURITY_CODE = import.meta.env.VITE_AMAP_SECURITY_CODE || "";
-const AMAP_KEY_MISSING = !AMAP_KEY;
+/**
+ * 高德 JS API 配置在**运行时**从后端 `/api/config` 获取，而不是打包进前端。
+ *
+ * 原因：Vite 会把 `VITE_*` 环境变量内联进 `build/assets/*.js`，
+ * 一旦分享或部署构建目录，Key 就随之泄漏。改为接口下发后，
+ * 密钥只存在于后端 `.env`（已被 gitignore），静态产物里不含任何密钥。
+ *
+ * 兼容：若确实在 frontend/.env 里配了 VITE_AMAP_KEY，仍会优先使用它（不推荐）。
+ */
+let amapConfigPromise: Promise<{ key: string; security: string }> | null = null;
 
-// JS API v2.0 要求在使用安全密钥时先声明，否则地图会鉴权失败。
-// 安全密钥本身是前端公开配置（会随打包产物下发），放 .env 只是为了不写死在仓库里。
-if (typeof window !== "undefined" && AMAP_SECURITY_CODE) {
-  (window as any)._AMapSecurityConfig = {
-    securityJsCode: AMAP_SECURITY_CODE,
-  };
+function loadAmapConfig(): Promise<{ key: string; security: string }> {
+  const envKey = import.meta.env.VITE_AMAP_KEY || "";
+  if (envKey) {
+    return Promise.resolve({
+      key: envKey,
+      security: import.meta.env.VITE_AMAP_SECURITY_CODE || "",
+    });
+  }
+  if (amapConfigPromise) return amapConfigPromise;
+
+  amapConfigPromise = fetch(`${API_BASE_URL}/config`)
+    .then((res) => res.json())
+    .then((body) => ({
+      key: body?.data?.amapKey || "",
+      security: body?.data?.amapSecurityCode || "",
+    }))
+    .catch(() => ({ key: "", security: "" }));
+  return amapConfigPromise;
 }
+
 const AMAP_SCRIPT_ID = "house-search-amap";
 const AMAP_UI_SCRIPT_ID = "house-search-amap-ui";
 
@@ -100,11 +118,21 @@ function loadScript(id: string, src: string) {
 
 async function loadAmap() {
   if (typeof AMap !== "undefined") return;
-  if (AMAP_KEY_MISSING) {
+
+  const config = await loadAmapConfig();
+  if (!config.key) {
     throw new Error(
-      "未配置高德地图 Key：请在 frontend/.env 中设置 VITE_AMAP_KEY 后重启前端",
+      "未配置高德地图 JS Key：请在后端 .env 填写 AMAP_KEY（服务平台选「Web端(JS API)」）" +
+        "与配套的 AMAP_SECURITY_CODE，然后重启后端",
     );
   }
+  // JS API v2.0 要求在使用安全密钥时先声明，否则地图鉴权失败
+  if (config.security) {
+    (window as any)._AMapSecurityConfig = {
+      securityJsCode: config.security,
+    };
+  }
+
   const plugins = [
     "AMap.Scale",
     "AMap.Geocoder",
@@ -117,7 +145,7 @@ async function loadAmap() {
   ];
   await loadScript(
     AMAP_SCRIPT_ID,
-    `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}&plugin=${plugins.join()}`,
+    `https://webapi.amap.com/maps?v=2.0&key=${config.key}&plugin=${plugins.join()}`,
   );
   await loadScript(
     AMAP_UI_SCRIPT_ID,
