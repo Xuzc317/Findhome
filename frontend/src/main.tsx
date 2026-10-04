@@ -13,6 +13,7 @@ import { CitiesProvider } from "./hook/cities";
 import HouseDetail from "./pages/house-detail";
 import MobileModal from "./components/mobile-modal/index.";
 import MapPage from "./pages/map";
+import MatchPage from "./pages/match/index";
 
 const router = createBrowserRouter([
   {
@@ -28,6 +29,11 @@ const router = createBrowserRouter([
     path: "/map",
     id: "map",
     element: <MapPage />,
+  },
+  {
+    path: "/match",
+    id: "match",
+    element: <MatchPage />,
   },
   {
     path: "/houses/:id",

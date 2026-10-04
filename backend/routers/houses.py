@@ -16,6 +16,32 @@ import json
 router = APIRouter()
 
 
+@router.get("/v3/houses/by-ids")
+async def houses_by_ids(
+    ids: str = Query(..., description="逗号分隔的房源 id"),
+    db: Session = Depends(get_db),
+):
+    """按 id 批量取房源（目前前端用于给匹配结果补卡片图）
+
+    匹配接口只返回筛选结果，不带图片；图片体积大，单独批量取更省流量。
+    """
+    id_list = [i.strip() for i in ids.split(",") if i.strip()][:100]
+    if not id_list:
+        return {"code": 0, "data": []}
+    rows = db.query(House).filter(House.id.in_(id_list)).all()
+    return {
+        "code": 0,
+        "data": [
+            {
+                "id": h.id,
+                "title": h.title,
+                "pictures": json.loads(h.images) if h.images and h.images != "[]" else [],
+            }
+            for h in rows
+        ],
+    }
+
+
 @router.get("/v3/houses")
 async def get_houses(
     city: Optional[str] = Query(None, description="城市"),

@@ -66,6 +66,7 @@ def cards_to_raw(cards, query_station: str, city: str = "深圳") -> List[RawHou
             price=price,
             rent_type=rent_type,
             publish_time=None,          # 卡片上没有发布时间，不猜
+            images=[card.image] if card.image else [],
             tags=[city, query_station, "闲鱼"],
             raw_data={"query": card.query, "station_hint": query_station},
         ))
@@ -169,6 +170,7 @@ async def collect_xiaohongshu(stations: List[str], suffixes: List[str],
                             price=_ep(title) or _ep(text),
                             rent_type=_irt(title, text),
                             publish_time=None,
+                            images=[card["img"]] if card.get("img") else [],
                             publisher=(card.get("author") or "").split("\n")[0] or None,
                             tags=[city, station, "小红书"],
                             raw_data={"query": query, "station_hint": station},

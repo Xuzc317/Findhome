@@ -37,6 +37,7 @@ class BrowserCard:
     url: str
     raw_text: str
     query: str
+    image: str = ""
 
 
 class BrowserSession:
@@ -141,7 +142,24 @@ class BrowserSession:
             """els => els.map(e => {
                 const href = e.getAttribute('href') || '';
                 const txt = (e.innerText || '').replace(/\\s+/g, ' ').trim();
-                return {href, txt};
+                // 图片：卡片内第一张有实际地址的 img（懒加载常用 data-src）
+                const imgs = Array.from(e.querySelectorAll('img'));
+                let img = '';
+                for (const im of imgs) {
+                    const cand = im.getAttribute('src') || im.getAttribute('data-src')
+                        || im.getAttribute('data-lazy-src') || '';
+                    if (cand && !cand.startsWith('data:')) {
+                        // 去掉缩放后缀，取原图（各站规则不同，取到就用）
+                        img = cand.startsWith('//') ? 'https:' + cand : cand;
+                        break;
+                    }
+                }
+                if (!img) {
+                    const bg = getComputedStyle(e).backgroundImage || '';
+                    const m = bg.match(/url\\(["']?([^"')]+)["']?\\)/);
+                    if (m && !m[1].startsWith('data:')) img = m[1];
+                }
+                return {href, txt, img};
             }).filter(x => x.txt.length > 4)""",
         )
         for card in cards:
@@ -184,6 +202,7 @@ def parse_goofish_cards(cards: List[dict], query: str) -> List[BrowserCard]:
             url=f"https://www.goofish.com/item?id={item_id}",
             raw_text=text[:500],
             query=query,
+            image=(card.get("img") or "").strip(),
         ))
     return results
 
@@ -233,11 +252,18 @@ async def search_xiaohongshu(session: "BrowserSession", query: str,
                 const a = sec.querySelector('a[href*="/explore/"]');
                 const titleEl = sec.querySelector('[class*="title"]');
                 const authorEl = sec.querySelector('[class*="author"], [class*="name"]');
+                const im = sec.querySelector('img');
+                let img = '';
+                if (im) {
+                    const cand = im.getAttribute('src') || im.getAttribute('data-src') || '';
+                    if (cand && !cand.startsWith('data:')) img = cand.startsWith('//') ? 'https:' + cand : cand;
+                }
                 return {
                     href: a ? a.getAttribute('href') : '',
                     title: titleEl ? (titleEl.innerText || '').trim() : '',
                     author: authorEl ? (authorEl.innerText || '').replace(/\s+/g,' ').trim() : '',
                     text: (sec.innerText || '').replace(/\s+/g,' ').trim().slice(0, 200),
+                    img: img,
                 };
             }).filter(x => x.href && x.title);
         }"""
