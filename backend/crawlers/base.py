@@ -55,7 +55,8 @@ PRICE_PATTERNS = [
     (re.compile(r"(\d{3,5})\s*/\s*月"), False),
     (re.compile(r"月租\s*[:：]?\s*(\d{3,5})"), False),
     (re.compile(r"租金\s*[:：]?\s*(\d{3,5})"), False),
-    (re.compile(r"(\d(?:\.\d)?)\s*[kK]\b"), True),
+    # k/K 后面常直接跟中文（"1k近地铁"），所以不能要求 \b 词边界
+    (re.compile(r"(\d(?:\.\d)?)\s*[kK](?![a-zA-Z])"), True),
     (re.compile(r"(\d(?:\.\d)?)\s*[kK]\s*(?:/|每)?\s*月"), True),
 ]
 
@@ -87,10 +88,14 @@ def extract_price(text: str, min_price: int = 300, max_price: int = 50000) -> Op
             if min_price <= price <= max_price:
                 return price
 
-    # 兜底：裸数字，但排除 1900-2100 这类明显是年份的数字
+    # 兜底：裸数字
+    # 注意：不能按数值区间排除"年份"——1900~2100 恰恰是极常见的租金区间
+    # （实测"一房一厅2000""大单间1950"都被误当成年份丢掉了）。
+    # 正确做法是看上下文：数字后面紧跟"年"才当成年份。
     for match in BARE_PRICE_PATTERN.finditer(clean):
         price = int(match.group(1))
-        if 1900 <= price <= 2100:
+        tail = clean[match.end():match.end() + 1]
+        if tail == "年":
             continue
         if 1000 <= price <= 30000:
             return price

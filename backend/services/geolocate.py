@@ -108,7 +108,8 @@ def normalize_station_name(value: str) -> str:
     return name
 
 
-def extract_candidates(house: House, max_candidates: int = 4) -> List[LocationCandidate]:
+def extract_candidates(house: House, max_candidates: int = 4,
+                       known_stations: Optional[List[str]] = None) -> List[LocationCandidate]:
     """从房源字段与文本中抽取地点候选，按可信度排序"""
     title = house.title or ""
     description = house.description or ""
@@ -138,11 +139,29 @@ def extract_candidates(house: House, max_candidates: int = 4) -> List[LocationCa
         # 过滤明显不是小区的词
         if len(name) < 3 or name in {"青年公寓", "品牌公寓", "服务公寓"}:
             continue
+        # 收紧：实测"光明长圳地铁口D出口500米大单间公寓"整段会被当成小区名，
+        # 导致地理编码跑偏。含数字/距离/交通词的候选一律不要。
+        if re.search(r"\d|地铁|出口|入口|米|公里|分钟|步行|距离|附近|旁边|路|街|站|号线", name):
+            continue
+        if len(name) > 12:      # 小区名极少超过 12 字
+            continue
         candidates.append(LocationCandidate(
             query=name, kind="community", confidence=70,
             evidence=f"正文命中: {name}", expect_precision="community"))
         if len(candidates) >= max_candidates + 3:
             break
+
+    # 2.5) 用已知站点名录直接匹配
+    # 实测大量房源写的是"石岩上屋地铁口""上屋个人转租"（没有"站"字），
+    # 单靠正则抓不到；用站点名录匹配既准又全。
+    for station_name in (known_stations or []):
+        if len(station_name) < 2:
+            continue
+        if station_name in blob:
+            candidates.append(LocationCandidate(
+                query=f"{station_name}站", kind="station", confidence=55,
+                evidence=f"正文出现已知站点：{station_name}",
+                expect_precision="station"))
 
     # 3) 地铁站（只能定位到"站点附近"，置信度明显更低）
     for match in RE_STATION.finditer(blob):
@@ -262,7 +281,16 @@ def locate_house(db: Session, house: House, amap: AmapClient,
     if not amap.available:
         return LocateOutcome(False, "未配置 AMAP_WEB_KEY，无法定位")
 
-    candidates = extract_candidates(house)
+    # 站点名录来自数据库（深圳 351 个站），用于识别"XX地铁口"这类写法
+    known_stations = None
+    try:
+        from backend.models import MetroStation
+        known_stations = [row[0] for row in db.query(MetroStation.name).filter(
+            MetroStation.city == city).all()]
+    except Exception:
+        known_stations = None
+
+    candidates = extract_candidates(house, known_stations=known_stations)
 
     # 规则抽取无结果时（或结果很少时）尝试大模型抽取
     if llm_extract is not None and (not candidates or max(c.confidence for c in candidates) < 70):

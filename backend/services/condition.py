@@ -28,6 +28,10 @@ ELEVATOR_NEGATIVE = [
 ELEVATOR_POSITIVE = [
     r"电梯房", r"有电梯", r"带电梯", r"电梯直达", r"电梯入户",
     r"独立电梯", r"电梯楼", r"高层电梯",
+    # 兜底：只要出现"电梯"且没有命中否定式，就认为写了电梯。
+    # 实测"花园小区电梯大单间""电梯4楼"这类写法很常见，
+    # 早先只列了"电梯房/有电梯"等固定搭配，导致明确写了电梯却被判为未标注。
+    r"电梯",
 ]
 
 # ---------- 新旧 ----------
@@ -165,3 +169,78 @@ def condition_summary(result: ConditionResult) -> str:
     if result.old_small:
         parts.append("⚠️ 含老破小类特征")
     return "；".join(parts)
+
+
+# ---------- 合租判定（闲鱼/小红书标题没有结构化租型，需要按文本判断）----------
+SHARED_STRONG = [
+    r"合租", r"找室友", r"招室友", r"拼租", r"分租", r"求合租",
+    r"主卧出租", r"次卧出租", r"床位", r"合住", r"搭子",
+]
+SHARED_WEAK = [r"主卧", r"次卧", r"室友"]
+
+# 明确的"整租"信号：出现这些就不按合租处理
+WHOLE_STRONG = [
+    r"整租", r"独门独户", r"独立厨卫", r"独立卫浴", r"独立阳台",
+    r"一房一厅", r"两房一厅", r"三房一厅",
+    # 泛化的 "N室M厅 / N房M厅"（阿拉伯数字与中文数字都要覆盖）
+    r"\d\s*[室房]\s*\d?\s*厅",
+    r"[一两二三四五六七八九]\s*[室房]\s*[一两二三]\s*厅",
+    r"[一两二三四五六七八九]居室?",
+    r"\d\s*居室?",
+]
+
+RE_WHOLE = re.compile("|".join(WHOLE_STRONG))
+RE_SHARED_STRONG = re.compile("|".join(SHARED_STRONG))
+RE_SHARED_WEAK = re.compile("|".join(SHARED_WEAK))
+
+
+def looks_shared(*texts: Optional[str]) -> bool:
+    """判断一条房源是不是"合租"（只租其中一间，非独立空间）
+
+    规则：出现明确的合租词 → 合租；
+    只出现"主卧/次卧"这类弱信号、且没有整租信号 → 仍按合租处理；
+    出现明确整租信号（整租/一房一厅/独立厨卫…）→ 不算合租。
+    """
+    blob = " ".join(t for t in texts if t)
+    if not blob:
+        return False
+    if RE_SHARED_STRONG.search(blob):
+        return True
+    if RE_WHOLE.search(blob):
+        return False
+    return bool(RE_SHARED_WEAK.search(blob))
+
+
+def infer_rent_type(*texts: Optional[str]) -> int:
+    """从文本推断出租类型：1合租 3整租 4公寓 0未知"""
+    blob = " ".join(t for t in texts if t)
+    if not blob:
+        return 0
+    if re.search(r"公寓|apartment|loft", blob, re.I) and not RE_SHARED_STRONG.search(blob):
+        return 4
+    if looks_shared(blob):
+        return 1
+    if RE_WHOLE.search(blob) or re.search(r"单间|开间|大单间", blob):
+        return 3
+    return 0
+
+
+# ---------- "求租"帖识别 ----------
+# 这些是"找房的人"发的，不是房源。混进结果会让用户白点。
+WANTED_PATTERNS = [
+    r"^求租", r"^求房", r"^寻租", r"^找房", r"^想租", r"^求推荐",
+    r"求租", r"寻租", r"求房源", r"找房子", r"找一房", r"找单间",
+    r"有没有.*(出租|转租).*的", r"有的老板", r"求介绍", r"中介勿扰$",
+    r"预算.*求", r"想找个", r"需要租",
+]
+
+
+def looks_wanted(*texts: Optional[str]) -> bool:
+    """判断一条信息是不是"求租"帖（发布者在找房，而非出租）"""
+    blob = " ".join(t for t in texts if t)
+    if not blob:
+        return False
+    for pattern in WANTED_PATTERNS:
+        if re.search(pattern, blob):
+            return True
+    return False

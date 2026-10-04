@@ -120,8 +120,14 @@ class WalkingResult:
 class AmapClient:
     """高德 Web 服务客户端（同步实现，供脚本与后台任务使用）"""
 
+    # 高德免费配额有 QPS 限制（实测超过会返回 10021 CUQPS_HAS_EXCEEDED_THE_QPS_LIMIT），
+    # 因此所有请求走统一节流：默认最小间隔 0.34 秒（约 3 QPS）
+    MIN_INTERVAL = 0.34
+
     def __init__(self, key: Optional[str] = None, cache_size: int = 4096,
-                 timeout: float = 12.0):
+                 timeout: float = 12.0, min_interval: Optional[float] = None):
+        self._min_interval = self.MIN_INTERVAL if min_interval is None else min_interval
+        self._last_request_at = 0.0
         settings = get_settings()
         self.key = (key if key is not None else settings.amap_web_key or "").strip()
         self.timeout = timeout
@@ -153,8 +159,14 @@ class AmapClient:
             self.cache_hits += 1
             return self._cache[cache_key]
 
+        # 节流：避免触发 QPS 限制（10021）
+        gap = time.time() - self._last_request_at
+        if gap < self._min_interval:
+            time.sleep(self._min_interval - gap)
+
         query = {"key": self.key, "output": "json", **params}
         self.calls += 1
+        self._last_request_at = time.time()
         try:
             response = self._client.get(f"{BASE_URL}{path}", params=query)
             response.raise_for_status()

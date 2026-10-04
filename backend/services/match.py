@@ -45,7 +45,14 @@ class Profile:
     price_min: Optional[int] = None
     price_max: Optional[int] = None
     layouts: List[str] = field(default_factory=list)   # studio / 1b1l / 2b1l
+    # 出租类型白名单：3=整租 4=公寓；空 = 不限。用户"只要整租"时填 [3, 4]
+    rent_types: List[int] = field(default_factory=list)
+    # 排掉合租（即使 rent_types 为空也生效）：按租型 + 文本特征双重判断
+    exclude_shared: bool = False
     require_elevator: bool = False      # 是否要求"明确写了有电梯"
+    # 位置精度要求：True 时，只把"小区/楼栋级"坐标的房源算作精确匹配；
+    # 只写"某站附近"的房源会被单列出来（坐标就是站点本身，算距离会得到 0 米，是假的）
+    require_precise_location: bool = True
     min_newness_score: Optional[int] = None
     avoid_old_small: bool = True        # 排除老破小类特征
     notes: str = ""
@@ -127,7 +134,34 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
         query = query.filter(House.price <= profile.price_max)
     if profile.layouts:
         query = query.filter(House.layout_key.in_(profile.layouts))
+    if profile.rent_types:
+        query = query.filter(House.rent_type.in_(profile.rent_types))
     candidates = query.all()
+
+    # 求租帖排除：这些是"找房的人"发的，不是房源（实测混进来会让用户白点链接）
+    from backend.services.condition import looks_wanted
+    wanted_removed = 0
+    kept_candidates = []
+    for house in candidates:
+        if looks_wanted(house.title, house.description):
+            wanted_removed += 1
+            continue
+        kept_candidates.append(house)
+    candidates = kept_candidates
+
+    # 合租排除：租型判为合租，或文本里出现合租特征词
+    if profile.exclude_shared:
+        from backend.services.condition import looks_shared
+        kept = []
+        dropped_shared = 0
+        for house in candidates:
+            if house.rent_type == 1 or looks_shared(house.title, house.description):
+                dropped_shared += 1
+                continue
+            kept.append(house)
+        candidates = kept
+    else:
+        dropped_shared = 0
 
     # ---------- 2) 站点坐标 ----------
     stations: List[MetroStation] = []
@@ -182,12 +216,45 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
     walk_calls = 0
     walk_skipped_no_key = False
     results: List[MatchedHouse] = []
+    imprecise: List[MatchedHouse] = []      # 只知道在某站附近、算不出真实距离的
     dropped_by_walk = 0
     walk_unknown = 0
 
     station_lines_cache: Dict[str, List[str]] = {}
 
     for house, station, straight in within_straight:
+        # 位置只精确到"站点附近"的房源：坐标就是站点坐标，距离必然是 0，
+        # 直接算会把"不知道多远"伪装成"就在站口"。这类单独列出让用户自己核实。
+        station_only = (house.geo_precision == "station")
+        if station_only and profile.require_precise_location:
+            condition = analyze_condition(house.title, house.description,
+                                          tags=house.tags, floor_text=house.raw_data)
+            if profile.avoid_old_small and condition.old_small:
+                continue
+            if station.id not in station_lines_cache:
+                station_lines_cache[station.id] = _station_lines(db, station)
+            imprecise.append(MatchedHouse(
+                house_id=house.id, title=house.title, price=house.price,
+                layout_label=LAYOUT_LABELS.get(house.layout_key or "", "未知"),
+                source=house.source, source_url=house.source_url,
+                district=house.district, community=house.community,
+                nearest_station=station.name,
+                nearest_station_lines=station_lines_cache[station.id],
+                straight_m=0, walk_m=None, walk_minutes=None,
+                walk_status="位置待确认",
+                elevator=condition.elevator,
+                elevator_evidence=condition.elevator_evidence,
+                elevator_hint=condition.elevator_hint,
+                newness_score=condition.newness_score,
+                newness_signals=condition.newness_signals,
+                old_small=condition.old_small,
+                geo_source=house.geo_source, geo_precision=house.geo_precision,
+                reasons=[f"标题/正文提到「{station.name}站」"
+                         + (f"（{house.community}）" if house.community else "")],
+                caveats=["仅知道在站点附近，无法确认真实距离，需自行核实"],
+            ))
+            continue
+
         record = db.query(StationDistance).filter(
             StationDistance.house_id == house.id,
             StationDistance.station_id == station.id).first()
@@ -293,12 +360,17 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
         -m.newness_score,
     ))
 
+    imprecise.sort(key=lambda m: (m.price or 99999))
+
     return {
         "success": True,
         "profile": profile.to_dict(),
         "matched": results,
+        "pendingLocation": imprecise,
         "stats": {
             "priceLayoutCandidates": len(candidates),
+            "droppedShared": dropped_shared,
+            "droppedWanted": wanted_removed,
             "stationsUsed": len(stations),
             "stationsMissing": missing_stations,
             "withoutCoord": len(no_coord),
@@ -307,6 +379,7 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             "droppedByWalkTime": dropped_by_walk,
             "walkUnknown": walk_unknown,
             "matched": len(results),
+            "pendingLocation": len(imprecise),
             "walkApiCalls": walk_calls,
             "amapKeyMissing": walk_skipped_no_key,
         },
@@ -348,7 +421,8 @@ def render_report(result: Dict, limit: int = 50) -> str:
     if stats.get("amapKeyMissing"):
         lines.append("   ⚠️ 未配置 AMAP_WEB_KEY：无法计算真实步行距离")
 
-    if not matched:
+    pending = result.get("pendingLocation") or []
+    if not matched and not pending:
         lines.append("\n没有符合条件的房源。")
         lines.append("可能原因：该预算/房型在地铁 1km 内的供给很少，或数据还没采到。")
         return "\n".join(lines)
@@ -367,4 +441,117 @@ def render_report(result: Dict, limit: int = 50) -> str:
         if m.caveats:
             lines.append(f"    ⚠️ {'；'.join(m.caveats)}")
         lines.append("")
+
+    if pending:
+        lines.append("=" * 78)
+        lines.append(f"【位置待确认】{len(pending)} 条 —— 只写了「某站附近」、没有小区名，"
+                     f"算不出真实距离（不拿站点坐标冒充 0 米）")
+        lines.append("=" * 78)
+        for i, m in enumerate(pending[:limit], 1):
+            elev = ("✅有电梯" if m.elevator is True
+                    else ("❌无电梯" if m.elevator is False else "❓电梯未标注"))
+            lines.append(f"{i:2}. [{m.price}元] {m.title[:44]}")
+            lines.append(f"    提到 {m.nearest_station}站 | {m.layout_label} | {elev} | 新旧{m.newness_score}")
+            lines.append(f"    来源：{m.source}  {m.source_url}")
+            lines.append("")
+    return "\n".join(lines)
+
+
+def render_markdown(result: Dict) -> str:
+    """输出 Markdown 清单（便于逐条核对、分享、存档）"""
+    profile = result.get("profile") or {}
+    stats = result.get("stats") or {}
+    matched: List[MatchedHouse] = result.get("matched") or []
+    pending: List[MatchedHouse] = result.get("pendingLocation") or []
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    lines = [f"# 通勤选址匹配清单（{now}）", ""]
+    lines.append("## 需求条件")
+    lines.append("")
+    lines.append(f"- **城市**：{profile.get('city')}")
+    lines.append(f"- **地铁站**（{len(profile.get('stations') or [])} 个）："
+                 f"{'、'.join(profile.get('stations') or [])}")
+    lines.append(f"- **预算**：{profile.get('price_min')}–{profile.get('price_max')} 元/月")
+    lines.append("- **房型**："
+                 + " / ".join(LAYOUT_LABELS.get(k, k) for k in (profile.get("layouts") or [])))
+    lines.append(f"- **出租类型**：只要整租/公寓（已排除合租）"
+                 if profile.get("exclude_shared") else "- **出租类型**：不限")
+    lines.append(f"- **距离**：直线 ≤ {profile.get('max_straight_m')} m，"
+                 f"且真实步行 ≤ {profile.get('max_walk_minutes')} 分钟")
+    lines.append("- **电梯**：标注不硬筛（平台很少写，故逐条标明状态与推断）")
+    lines.append("- **房况**：排除老破小/城中村/农民房，不设新旧分阈值")
+    lines.append("")
+    lines.append("## 统计")
+    lines.append("")
+    lines.append(f"- 价格房型候选：{stats.get('priceLayoutCandidates')} 条")
+    lines.append(f"- 排除合租：{stats.get('droppedShared', 0)} 条")
+    lines.append(f"- 直线距离达标：{stats.get('withinStraight')} 条")
+    lines.append(f"- 步行超时淘汰：{stats.get('droppedByWalkTime', 0)} 条")
+    lines.append(f"- **精确符合：{stats.get('matched')} 条**")
+    lines.append(f"- 位置待确认：{stats.get('pendingLocation', 0)} 条")
+    lines.append(f"- 缺坐标未能定位：{stats.get('withoutCoord', 0)} 条")
+    if stats.get("stationsMissing"):
+        lines.append(f"- ⚠️ 缺坐标的站点：{stats['stationsMissing']}")
+    lines.append("")
+
+    def elev_text(m: MatchedHouse) -> str:
+        if m.elevator is True:
+            return f"✅ 有（原文“{m.elevator_evidence}”）"
+        if m.elevator is False:
+            return f"❌ 无（原文“{m.elevator_evidence}”）"
+        return "❓ 未标注"
+
+    lines.append(f"## 一、精确符合（{len(matched)} 条）")
+    lines.append("")
+    lines.append("> 坐标到小区/楼栋级，距离是**高德真实步行路径**算出来的。")
+    lines.append("")
+    if not matched:
+        lines.append("_无_")
+        lines.append("")
+    for i, m in enumerate(matched, 1):
+        lines.append(f"### {i}. {m.title}")
+        lines.append("")
+        lines.append(f"| 项目 | 内容 |")
+        lines.append(f"|---|---|")
+        lines.append(f"| 价格 | **{m.price} 元/月** |")
+        lines.append(f"| 最近地铁站 | {m.nearest_station}（{'、'.join(m.nearest_station_lines)}） |")
+        lines.append(f"| 直线距离 | {m.straight_m} m |")
+        lines.append(f"| 真实步行 | "
+                     + (f"**{m.walk_minutes} 分钟 / {m.walk_m} m**" if m.walk_minutes else "未计算")
+                     + " |")
+        lines.append(f"| 房型 | {m.layout_label} |")
+        lines.append(f"| 电梯 | {elev_text(m)} |")
+        if m.elevator is None and m.elevator_hint:
+            lines.append(f"| 楼层推断 | {m.elevator_hint} |")
+        lines.append(f"| 新旧分 | {m.newness_score} / 100"
+                     + (f"（{'、'.join(m.newness_signals[:3])}）" if m.newness_signals else "")
+                     + " |")
+        if m.district or m.community:
+            lines.append(f"| 位置 | {(m.district or '')} {(m.community or '')} |".replace("  ", " "))
+        lines.append(f"| 坐标来源 | {m.geo_source or '-'} / {m.geo_precision or '-'} |")
+        lines.append(f"| 平台 | {m.source} |")
+        lines.append(f"| 原始链接 | {m.source_url} |")
+        lines.append("")
+        if m.caveats:
+            lines.append("待确认：" + "；".join(m.caveats))
+            lines.append("")
+
+    lines.append(f"## 二、位置待确认（{len(pending)} 条）")
+    lines.append("")
+    lines.append("> 这些房源只写了「某地铁站附近」，没有小区名。"
+                 "**不能用站点坐标冒充房源坐标**（那会让距离算成 0 米），")
+    lines.append("> 所以单列出来，价格房型都符合，但距离需要你点开链接自行确认。")
+    lines.append("")
+    if not pending:
+        lines.append("_无_")
+        lines.append("")
+    for i, m in enumerate(pending, 1):
+        lines.append(f"{i}. **{m.price} 元** · {m.layout_label} · 电梯{elev_text(m)} · "
+                     f"新旧 {m.newness_score} — {m.title[:46]}")
+        lines.append(f"   - 提到 {m.nearest_station}站 | {m.source} | {m.source_url}")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("> 距离为高德真实步行路径；电梯状态区分「原文明确」与「楼层推断」，"
+                 "未标注不等于没有，建议电话或现场确认。")
     return "\n".join(lines)

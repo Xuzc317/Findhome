@@ -43,3 +43,9 @@ frontend/node_modules/
 # 前端统一使用 npm（package-lock.json）
 frontend/pnpm-lock.yaml
 frontend/yarn.lock
+
+# 登录助手使用的浏览器资料（含登录态，绝不入库）
+.browser-profile/
+
+# 需求匹配清单由脚本生成，属个人筛选结果，不入库
+docs/matches-*.md

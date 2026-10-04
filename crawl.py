@@ -226,7 +226,7 @@ def run_distance(city: str, station_name: str, limit: int, max_calls: int,
 
 
 def run_match(profile_name: str, compute_walk: bool = True,
-              locate_missing: bool = False):
+              locate_missing: bool = False, write_path: str = ""):
     """按需求档案挑房：地铁站 + 预算 + 房型 + 真实步行距离 + 条件"""
     from backend.database import SessionLocal
     from backend.services import match as match_service
@@ -251,6 +251,11 @@ def run_match(profile_name: str, compute_walk: bool = True,
             db, profile, amap=amap,
             compute_walk=compute_walk, locate_missing=locate_missing)
         print(match_service.render_report(result))
+        if write_path:
+            os.makedirs(os.path.dirname(write_path) or ".", exist_ok=True)
+            with open(write_path, "w", encoding="utf-8") as f:
+                f.write(match_service.render_markdown(result))
+            print(f"\n📝 已写入清单: {write_path}")
     finally:
         amap.close()
         db.close()
@@ -294,6 +299,8 @@ async def main():
                         help="[match] 不计算真实步行距离（只按直线预筛，快但不够准）")
     parser.add_argument("--locate-missing", action="store_true",
                         help="[match] 顺带给缺坐标的候选房源先做定位")
+    parser.add_argument("--write", default="",
+                        help="[match] 把清单写成 Markdown 文件，如 docs/matches.md")
 
     args = parser.parse_args()
 
@@ -319,7 +326,8 @@ async def main():
 
     if args.source == "match":
         run_match(args.profile, compute_walk=not args.no_walk,
-                  locate_missing=args.locate_missing)
+                  locate_missing=args.locate_missing,
+                  write_path=args.write or "")
         return
 
     if args.source == "health":
