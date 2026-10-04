@@ -123,6 +123,9 @@ python crawl.py xiaohongshu --city 上海
 # 离线解析测试（71 项，无需联网、不触发平台风控）
 python tests/test_parsers.py
 
+# 去重与风险评分测试（16 项，内存 SQLite）
+python tests/test_dedup_risk.py
+
 # 验收记录：各来源最近的房源（标题/价格/发布时间/source_url/抓取时间/风险分）
 python verify_sources.py
 python verify_sources.py --write docs/acceptance.md
@@ -243,6 +246,7 @@ HouseSearch-local-v1/
 ├── verify_sources.py      # 各来源真实房源验收记录导出
 ├── verify_consistency.py  # 与平台当前页面的一致性校验
 ├── tests/test_parsers.py  # 解析器离线测试（71 项，无需联网）
+├── tests/test_dedup_risk.py # 去重与风险评分测试（16 项）
 ├── tests/test_ui_smoke.py # 前端端到端冒烟（可选，需 playwright）
 ├── start.py               # 启动脚本（backend/frontend/setup/seed）
 ├── crawl.py               # 爬虫 CLI
