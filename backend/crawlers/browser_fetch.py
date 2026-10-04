@@ -119,7 +119,7 @@ class BrowserSession:
 
     async def scrape_cards(self, url: str, item_selector: str,
                            wait_ms: int = 8000, scroll_times: int = 2,
-                           query: str = "") -> List[dict]:
+                           query: str = "", load_images: bool = True) -> List[dict]:
         """打开页面 → 等结果渲染 → 抓取卡片（含可选滚动加载）"""
         await self.page.goto(url, wait_until="domcontentloaded", timeout=45000)
         await self.page.wait_for_timeout(wait_ms)
@@ -136,6 +136,21 @@ class BrowserSession:
             except Exception:
                 pass
             await self.page.wait_for_timeout(2500)
+
+        # 图片是懒加载的：不滚动的话拿到的是全站统一的占位图，
+        # 会出现"几百条房源共用一张图"的假数据。先滚动把图催出来。
+        if load_images:
+            for _ in range(3):
+                try:
+                    await self.page.mouse.wheel(0, 1200)
+                except Exception:
+                    break
+                await self.page.wait_for_timeout(1200)
+            try:
+                await self.page.evaluate("window.scrollTo(0, 0)")
+                await self.page.wait_for_timeout(800)
+            except Exception:
+                pass
 
         cards = await self.page.eval_on_selector_all(
             item_selector,
@@ -164,6 +179,16 @@ class BrowserSession:
         )
         for card in cards:
             card["query"] = query
+
+        # 占位图检测：同一页里反复出现的图片一定是站点占位/骨架图，不是房源图。
+        # 实测闲鱼未加载完时 755/982 条共用同一张占位图，会污染整个库。
+        if load_images:
+            from collections import Counter
+            counter = Counter(c["img"] for c in cards if c.get("img"))
+            for card in cards:
+                img = card.get("img")
+                if img and counter[img] >= 3:
+                    card["img"] = ""
         return cards
 
 
