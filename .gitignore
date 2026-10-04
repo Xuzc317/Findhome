@@ -39,3 +39,7 @@ frontend/node_modules/
 
 # Playwright
 .playwright/
+
+# 前端统一使用 npm（package-lock.json）
+frontend/pnpm-lock.yaml
+frontend/yarn.lock

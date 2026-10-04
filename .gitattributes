@@ -1,0 +1,19 @@
+# 统一换行符：仓库内一律使用 LF
+* text=auto eol=lf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.db binary
+
+# 锁文件视为生成物，折叠到语言统计外
+package-lock.json linguist-generated=true
+pnpm-lock.yaml linguist-generated=true
+yarn.lock linguist-generated=true
+
+# 截图目录不作为语言统计主体
+docs/screenshots/* linguist-vendored=false
