@@ -151,6 +151,82 @@ def main():
         c.skipped += 5
         print("  ⏭️  无数据，跳过筛选闭环校验")
 
+    # ---- 地铁与定位（无需任何 Key 也应可用）----
+    c.section("【地铁 /metro】")
+    body = safe_json(c.get("/metro/lines", params={"city": "深圳"}))
+    lines = body.get("data") or []
+    stats = body.get("stats") or {}
+    c.check("返回深圳地铁线路", body.get("code") == 0 and len(lines) >= 10,
+            f"{len(lines)} 条线路")
+    c.check("站点总数 >= 300", (stats.get("stations") or 0) >= 300,
+            f"{stats.get('stations')} 站")
+    c.check("全部站点都有坐标（否则无法算步行距离）",
+            (stats.get("stationsWithCoord") or 0) == (stats.get("stations") or -1),
+            f"{stats.get('stationsWithCoord')}/{stats.get('stations')}")
+    if lines:
+        first = lines[0]
+        c.check("线路含名称/站点数/颜色",
+                all(k in first for k in ("name", "stationCount", "color")),
+                f"{first.get('name')} {first.get('stationCount')}站")
+
+    body = safe_json(c.get("/metro/stations", params={"city": "深圳", "line": "1号线"}))
+    stations = body.get("data") or []
+    c.check("按线路取站点", len(stations) > 10, f"1号线 {len(stations)} 站")
+    if stations:
+        c.check("站点含线路归属与坐标",
+                all(k in stations[0] for k in ("name", "lines", "lng", "lat")),
+                f"如 {stations[0].get('name')} → "
+                f"{[l.get('name') for l in stations[0].get('lines', [])]}")
+
+    # ---- 定位能力与覆盖率 ----
+    c.section("【定位 /geo】")
+    body = safe_json(c.get("/geo/config"))
+    data = body.get("data") or {}
+    c.check("返回高德/大模型能力状态",
+          isinstance(data.get("amap"), dict) and isinstance(data.get("llm"), dict),
+          f"高德可用={data.get('amap', {}).get('available')} "
+          f"大模型={data.get('llm', {}).get('active')}")
+    layout_options = data.get("layoutOptions") or []
+    c.check("房型档位为 单间/1房1厅/2房1厅/3房1厅",
+            [o.get("label") for o in layout_options][:4]
+            == ["单间", "1房1厅", "2房1厅", "3房1厅"],
+            str([o.get("label") for o in layout_options]))
+
+    body = safe_json(c.get("/geo/stats", params={"city": "深圳"}))
+    stats = body.get("data") or {}
+    c.check("返回定位覆盖率统计",
+            "withCoord" in stats and "total" in stats,
+            f"{stats.get('withCoord')}/{stats.get('total')} "
+            f"({stats.get('coveragePercent')}%)")
+    c.check("坐标来源与精度分档统计存在",
+            isinstance(stats.get("bySource"), dict)
+            and isinstance(stats.get("byPrecision"), dict),
+            f"来源={stats.get('bySource')}")
+
+    # 房型筛选闭环（不需要坐标）
+    body = safe_json(c.get("/v3/houses", params={"pageSize": 200, "layouts": "2b1l"}))
+    items = body.get("data") or []
+    if items:
+        c.check("房型筛选只返回所选档位",
+                all(h.get("layoutKey") == "2b1l" for h in items),
+                f"{len(items)} 条，标签如 {items[0].get('layoutLabel')}")
+        c.check("返回 layoutLabel 供前端展示",
+                all(h.get("layoutLabel") for h in items[:5]))
+    else:
+        c.skipped += 2
+        print("  ⏭️  无 2房1厅 数据，跳过房型筛选校验")
+
+    # 出租类型多选（默认只看整租）
+    body = safe_json(c.get("/v3/houses", params={"pageSize": 200, "rentTypes": "3"}))
+    items = body.get("data") or []
+    if items:
+        c.check("出租类型多选只返回整租",
+                all(h.get("rentType") == 3 for h in items),
+                f"{len(items)} 条")
+    else:
+        c.skipped += 1
+        print("  ⏭️  无整租数据，跳过出租类型校验")
+
     # ---- 数据源能力声明 ----
     c.section("【数据源能力 /sources/health】")
     body = safe_json(c.get("/sources/health"))

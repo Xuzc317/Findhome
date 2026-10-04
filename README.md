@@ -125,11 +125,13 @@ python crawl.py xiaohongshu --city 上海
 ### 5. 验收与自检
 
 ```bash
-# 离线解析测试（71 项，无需联网、不触发平台风控）
-python tests/test_parsers.py
+# 离线测试（无需联网、不触发平台风控）
+python tests/test_parsers.py       # 解析 71 项
+python tests/test_dedup_risk.py    # 去重与风险 16 项
+python tests/test_metro_geo.py     # 地铁/坐标/房型/定位 41 项
 
-# 去重与风险评分测试（16 项，内存 SQLite）
-python tests/test_dedup_risk.py
+# 接口契约 + 筛选闭环自检（44 项，退出码 0 即全部通过）
+python verify_api.py
 
 # 验收记录：各来源最近的房源（标题/价格/发布时间/source_url/抓取时间/风险分）
 python verify_sources.py
@@ -137,9 +139,6 @@ python verify_sources.py --write docs/acceptance.md
 
 # 线上一致性校验：与平台当前页面逐条比对（贝壳按房源编号比对标题+价格）
 python verify_consistency.py --limit 5
-
-# 接口契约 + 筛选闭环自检（31 项，退出码 0 即全部通过）
-python verify_api.py
 
 # 前端端到端冒烟（可选，需 playwright，验证列表渲染 + 原始链接可打开）
 pip install playwright && python -m playwright install chromium
@@ -149,7 +148,42 @@ python tests/test_ui_smoke.py --city 深圳
 少于 5 条真实房源的来源会被标记为未达标；演示数据（`demo.local`）会被标记为不可打开且不计入。
 平台风控期间一致性校验会如实报告"无法比对"，不会假装通过。
 
-### 6. 只想先看界面？（可选）
+### 6. 地铁选址与房源定位（核心功能）
+
+```bash
+# 地铁数据：首次使用自动导入 data/metro/shenzhen.json（17 线 351 站）
+python crawl.py metro --city 深圳              # 导入静态数据
+python crawl.py metro --city 深圳 --sync       # 再用高德 POI 校准坐标
+
+# 房源定位：从标题/正文/图片推断坐标（记录来源与精度）
+python crawl.py locate --city 深圳 --limit 10     # 小批量，可反复调用增量推进
+python crawl.py locate --city 深圳 --no-llm       # 只用规则，不调用大模型
+
+# 步行距离：算到指定站点的真实步行路径（可反复调用增量续算）
+python crawl.py distance --station 车公庙
+python crawl.py distance --station 车公庙 --max-calls 200
+```
+
+也可在网页左侧「更多筛选 → 数据准备」里点按钮完成同样的操作。
+
+### 7. 登录平台的 Cookie 导入（只接受你本人浏览器的 Cookie）
+
+闲鱼、小红书必须登录；豆瓣带上登录态后成功率明显提高。本工具**不索取密码**，
+Cookie 只写入被 git 忽略的 `.env`，且写入前会用真实请求校验：
+
+```bash
+python import_cookie.py --status      # 查看各平台状态（只显示掩码）
+python import_cookie.py --check       # 校验 .env 里已有 Cookie 是否仍有效
+python import_cookie.py xianyu        # 交互式粘贴 → 真实请求校验 → 写入 .env
+python import_cookie.py douban --clear
+
+# 浏览器获取步骤：登录后 F12 → Network → 任意请求 → Request Headers → 复制 Cookie 整行
+```
+
+校验不通过时**不会写入**，并打印平台返回的真实原因（如闲鱼的 `RGV587_ERROR`、
+小红书的 `code=-101`）；确认要强行写入可加 `--force`。
+
+### 8. 只想先看界面？（可选）
 
 没有真实数据时，可写入带 `[示例]` 前缀的演示数据来验证前后端链路：
 

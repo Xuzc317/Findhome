@@ -28,6 +28,9 @@ jobs:
       - name: 去重与风险评分测试（16 项）
         run: python tests/test_dedup_risk.py
 
+      - name: 地铁/坐标/房型/定位离线测试（41 项，需 data/metro 静态数据）
+        run: python tests/test_metro_geo.py
+
       - name: 启动后端
         run: |
           python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
@@ -42,6 +45,11 @@ jobs:
 
       - name: 接口契约与筛选闭环自检（31 项）
         run: python verify_api.py --base http://127.0.0.1:8000/api
+
+      - name: Cookie 导入工具自检（不应写入任何 Cookie）
+        run: |
+          python import_cookie.py --status
+          python import_cookie.py --check
 
   frontend:
     name: 前端构建检查
