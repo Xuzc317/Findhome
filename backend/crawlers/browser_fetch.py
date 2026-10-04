@@ -233,13 +233,28 @@ def parse_goofish_cards(cards: List[dict], query: str) -> List[BrowserCard]:
 
 
 async def search_goofish(session: BrowserSession, query: str,
-                         wait_ms: int = 8000) -> List[BrowserCard]:
-    """在闲鱼搜索一个关键词，返回卡片列表"""
+                         wait_ms: int = 8000, sort: str = "default") -> List[BrowserCard]:
+    """在闲鱼搜索一个关键词，返回卡片列表
+
+    sort="new" 时会先点页面上的「新发布」再抓取。闲鱼的排序是前端状态
+    （点击不改变 URL），所以只能通过点击来切换，不能靠改 URL 参数。
+    """
     from urllib.parse import quote
 
     url = f"https://www.goofish.com/search?q={quote(query)}"
-    cards = await session.scrape_cards(
-        url, 'a[href*="item?id="]', wait_ms=wait_ms, query=query)
+    if sort == "new":
+        await session.page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        await session.page.wait_for_timeout(wait_ms)
+        try:
+            await session.page.locator("text=新发布").first.click(timeout=5000)
+            await session.page.wait_for_timeout(5000)
+        except Exception:
+            pass  # 点不到就按默认排序抓，不假装成功
+        cards = await session.scrape_cards(
+            url, 'a[href*="item?id="]', wait_ms=3000, query=query)
+    else:
+        cards = await session.scrape_cards(
+            url, 'a[href*="item?id="]', wait_ms=wait_ms, query=query)
     return parse_goofish_cards(cards, query)
 
 

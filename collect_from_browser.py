@@ -119,6 +119,55 @@ async def collect_xianyu(stations: List[str], suffixes: List[str],
             "perStation": per_station}
 
 
+async def collect_xianyu_fresh(stations, city="深圳", cdp_port=9222,
+                               wait_ms=7000, top_n=12) -> dict:
+    """按闲鱼「新发布」排序采集，给排序靠前的房源打上"新发布"标记
+
+    ⚠️ 实测结论（2026-10-04）：闲鱼搜索页的「新发布」是前端状态，
+    点击后返回的顺序与「综合」**完全一致**（前 6 条相同、30 条全重叠），
+    因此这条路径拿不到真正的"最新发布"排序。保留实现以备平台改版，
+    但不要指望它。要真实发布时间只能逐条打开详情页。
+
+    为什么只标前 N 条：所有搜索最终都会覆盖同一批房源，
+    如果全都打标就失去意义。排序靠前的才是真正新发布的。
+    """
+    from backend.crawlers.manager import CrawlerManager
+    from backend.database import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    manager = CrawlerManager(db)
+    total_new = 0
+    details = []
+    try:
+        async with BrowserSession(cdp_port=cdp_port) as session:
+            for station in stations:
+                query = f"{station} 租房"
+                try:
+                    cards = await search_goofish(session, query, wait_ms=wait_ms, sort="new")
+                except Exception as e:
+                    print(f"  ❌ {query}: {type(e).__name__}: {str(e)[:60]}", flush=True)
+                    continue
+                if not cards:
+                    print(f"  ⚪ {query}: 0 条", flush=True)
+                    continue
+                fresh = cards[:top_n]
+                raw = cards_to_raw(fresh, station, city=city)
+                for r, card in zip(raw, fresh):
+                    # 打标进 tags，前端据此显示"🆕 最新发布"
+                    r.tags = list(r.tags) + ["新发布"]
+                    r.raw_data = dict(r.raw_data or {}, fresh_rank=cards.index(card) + 1)
+                inserted, updated = manager._process_houses(raw, "xianyu")
+                total_new += inserted
+                details.append({"station": station, "count": len(fresh)})
+                print(f"  ✅ {query:14} 新发布前 {len(fresh):2} 条 → 新增 {inserted} 更新 {updated}",
+                      flush=True)
+                await asyncio.sleep(QUERY_DELAY)
+    finally:
+        db.close()
+    return {"cards": sum(d["count"] for d in details), "new": total_new, "details": details}
+
+
 async def collect_beike(paths, city: str = "深圳", cdp_port: int = 9222,
                         wait_ms: int = 6000) -> dict:
     """通过浏览器采集贝壳列表页（复用 BeikeCrawler 的解析器）"""
@@ -253,6 +302,10 @@ def main() -> int:
     parser.add_argument("--city", default="深圳")
     parser.add_argument("--port", type=int, default=9222, help="浏览器调试端口")
     parser.add_argument("--wait-ms", type=int, default=8000, help="每页等待渲染毫秒")
+    parser.add_argument("--sort", default="default", choices=["default", "new"],
+                        help="[xianyu] 按闲鱼「新发布」排序采集（默认综合排序）")
+    parser.add_argument("--top", type=int, default=12,
+                        help="[xianyu --sort new] 每个站取排序前 N 条标为「新发布」")
     args = parser.parse_args()
 
     stations = list(args.station)
@@ -269,6 +322,15 @@ def main() -> int:
     print(f"通过常驻浏览器采集闲鱼：{len(stations)} 个站 × {len(suffixes)} 个查询")
     print(f"站点：{'、'.join(stations)}")
     print("=" * 74, flush=True)
+
+    if args.platform == "xianyu" and args.sort == "new":
+        result = asyncio.run(collect_xianyu_fresh(
+            stations, city=args.city, cdp_port=args.port,
+            wait_ms=args.wait_ms, top_n=args.top))
+        print("\n" + "=" * 74)
+        print(f"新发布采集完成：新增 {result['new']} 条")
+        print("=" * 74)
+        return 0
 
     if args.platform == "beike":
         # 贝壳按"区域 + 租型 + 价格区间"路径采集，与站点关键词无关

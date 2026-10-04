@@ -534,15 +534,17 @@ export default function MatchPage() {
               { label: "🏢 疑似中介", value: "agency" },
             ]}
           />
-          <Segmented
+          <Tooltip title="平台搜索结果不提供发布时间，所以这里按「房况新旧分」排序（装修/新上/首次出租等信号），不是发布时间。想按发布时间需要逐条打开详情页抓取。">
+            <Segmented
             value={sortBy}
             onChange={(v) => setSortBy(v as "walk" | "price" | "newness")}
             options={[
               { label: "步行最短", value: "walk" },
               { label: "价格最低", value: "price" },
-              { label: "最新", value: "newness" },
+              { label: "房况较新", value: "newness" },
             ]}
-          />
+            />
+          </Tooltip>
           {(stationFilter.length > 0 || sourceFilter.length > 0) && (
             <Button
               type="link"

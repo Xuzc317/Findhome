@@ -113,6 +113,7 @@ class MatchedHouse:
     # 发布者维度：闲鱼图片 URL 里带发布者 ID，可据此识别批量发布的机构/中介。
     # 用户实测反馈"满意的三套全是宣传图"，一查正是发布量第一的账号（98 条在租），
     # 所以这个信号对判断"图能不能信"很关键。
+    is_fresh: bool = False            # 出现在闲鱼「新发布」排序前列
     seller_id: Optional[str] = None
     seller_listings: int = 1          # 该发布者在库在租条数
     poster_type: str = "unknown"      # individual / agency / unknown
@@ -281,6 +282,7 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             _sid = extract_seller_id(house)
             _sn = seller_counts.get(_sid or "", 1)
             imprecise.append(MatchedHouse(
+                is_fresh=bool(house.tags and "新发布" in house.tags),
                 seller_id=_sid, seller_listings=_sn,
                 poster_type=("agency" if _sn >= AGENCY_THRESHOLD
                              else ("individual" if _sid else "unknown")),
@@ -390,7 +392,9 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
         if house.geo_precision in ("station",):
             caveats.append("坐标按地铁站近似，实际位置可能偏差")
 
+        _fresh = bool(house.tags and "新发布" in house.tags)
         results.append(MatchedHouse(
+            is_fresh=_fresh,
             seller_id=seller_id, seller_listings=seller_n,
             poster_type=("agency" if seller_n >= AGENCY_THRESHOLD
                          else ("individual" if seller_id else "unknown")),
