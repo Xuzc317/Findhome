@@ -285,6 +285,16 @@ Findhome/
    （不影响搜索/筛选/地图）。
 9. **SQLite 并发**：适合个人单机使用，不适合高并发写入。
 
+## 版本管理与协作约定
+
+本仓库的提交格式、版本号规则、CHANGELOG 维护与发布流程，统一遵循
+**[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)**（面向协作者与 Agent 的约定，非硬性流程）。
+版本变更历史见 **[CHANGELOG.md](CHANGELOG.md)**，发布版本见
+[Releases](https://github.com/Xuzc317/Findhome/releases)。
+
+> 接手仓库管理的 Agent：动手前请先读 `docs/GIT_WORKFLOW.md`，
+> 其中包含提交信息格式、tag 规范、发布清单与敏感信息红线。
+
 ## 数据来源与致谢
 
 本项目基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 改造，保留原项目的前端 UI 设计。
