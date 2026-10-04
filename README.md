@@ -1,6 +1,10 @@
-# HouseSearch Local v1
+# Findhome
 
-本地租房信息聚合、搜索、筛选系统。基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 改造，专为个人本地使用设计。
+> 本地租房信息聚合、搜索、筛选系统 —— 帮你搜和筛，不替代你最终核验房源。
+
+仓库：https://github.com/Xuzc317/Findhome
+
+基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 改造（原项目前端 UI 与 LGPL v3 许可保留），专为个人本地使用设计。
 
 ## 项目定位
 
@@ -56,7 +60,8 @@
 需要 Python 3.10+ 和 Node.js 18+
 
 ```bash
-cd HouseSearch-local-v1
+git clone https://github.com/Xuzc317/Findhome.git
+cd Findhome
 
 # 建议使用独立虚拟环境
 python3 -m venv .venv
@@ -211,7 +216,7 @@ curl 'http://localhost:8000/api/v2/cities'
 ## 项目结构
 
 ```
-HouseSearch-local-v1/
+Findhome/
 ├── backend/
 │   ├── main.py            # FastAPI 入口（lifespan 初始化数据库）
 │   ├── config.py          # 配置（路径全部以项目根为基准）
