@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from backend.database import get_db
@@ -22,6 +22,7 @@ async def get_houses(
     source: Optional[str] = Query(None, description="数据源"),
     keyword: Optional[str] = Query(None, description="关键词"),
     keyword_exclude: Optional[str] = Query(None, description="排除关键词"),
+    keywordExclude: Optional[str] = Query(None, description="排除关键词(camelCase)"),
     # 价格：同时兼容下划线与前端 camelCase 两种写法
     from_price: Optional[int] = Query(None, description="最低价格"),
     fromPrice: Optional[int] = Query(None, description="最低价格(camelCase)"),
@@ -40,6 +41,13 @@ async def get_houses(
     sortOrder: Optional[str] = Query(None, description="排序方向(camelCase)"),
     commute_max_duration: Optional[int] = Query(None, description="最大通勤时间(分钟)"),
     max_agent_score: Optional[int] = Query(None, description="最大中介评分"),
+    maxAgentScore: Optional[int] = Query(None, description="最大中介评分(camelCase)"),
+    max_ad_score: Optional[int] = Query(None, description="最大广告评分"),
+    maxAdScore: Optional[int] = Query(None, description="最大广告评分(camelCase)"),
+    max_suspicious_score: Optional[int] = Query(None, description="最大异常评分"),
+    maxSuspiciousScore: Optional[int] = Query(None, description="最大异常评分(camelCase)"),
+    min_confidence_score: Optional[int] = Query(None, description="最低可信度评分"),
+    minConfidenceScore: Optional[int] = Query(None, description="最低可信度评分(camelCase)"),
     hide_duplicates: bool = Query(True, description="隐藏重复房源"),
     db: Session = Depends(get_db)
 ):
@@ -52,7 +60,7 @@ async def get_houses(
         district=district,
         source=source,
         keyword=keyword,
-        keyword_exclude=keyword_exclude,
+        keyword_exclude=keyword_exclude or keywordExclude,
         from_price=from_price if from_price is not None else fromPrice,
         to_price=to_price if to_price is not None else toPrice,
         rent_type=rent_type if rent_type is not None else rentType,
@@ -62,7 +70,12 @@ async def get_houses(
         sort_by=sort_by or sortBy or "publish_time",
         sort_order=sort_order or sortOrder or "desc",
         commute_max_duration=commute_max_duration,
-        max_agent_score=max_agent_score,
+        max_agent_score=max_agent_score if max_agent_score is not None else maxAgentScore,
+        max_ad_score=max_ad_score if max_ad_score is not None else maxAdScore,
+        max_suspicious_score=(max_suspicious_score
+                              if max_suspicious_score is not None else maxSuspiciousScore),
+        min_confidence_score=(min_confidence_score
+                              if min_confidence_score is not None else minConfidenceScore),
         hide_duplicates=hide_duplicates,
     )
 
@@ -168,14 +181,17 @@ async def update_houses_lat_lng(
     items: List[dict] = Body(default=[]),
     db: Session = Depends(get_db)
 ):
-    """批量回填房源经纬度（前端地图校准后调用）"""
+    """批量回填房源经纬度（前端地图校准后调用，可重复执行）"""
     updated = 0
+    skipped = 0
     for item in items or []:
         house_id = item.get("id")
         if not house_id:
+            skipped += 1
             continue
         house = db.query(House).filter(House.id == house_id).first()
         if not house:
+            skipped += 1
             continue
         try:
             if item.get("longitude") not in (None, ""):
@@ -183,10 +199,17 @@ async def update_houses_lat_lng(
             if item.get("latitude") not in (None, ""):
                 house.latitude = float(item["latitude"])
         except (TypeError, ValueError):
+            skipped += 1
             continue
         updated += 1
-    db.commit()
-    return {"success": True, "code": 0, "data": {"updated": updated}}
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"写入失败: {type(e).__name__}: {e}")
+
+    return {"success": True, "code": 0, "data": {"updated": updated, "skipped": skipped}}
 
 
 @router.post("/v3/houses/{house_id}/report")
@@ -210,17 +233,31 @@ async def delete_house(
     source: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    """软删除房源（status=1）"""
+    """软删除房源（status=1，可重复执行）"""
     house = db.query(House).filter(House.id == house_id).first()
     if not house:
         return {"code": 404, "success": False, "message": "房源不存在"}
 
-    house.status = 1
-    db.commit()
+    try:
+        house.status = 1
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除失败: {type(e).__name__}: {e}")
+
     return {"code": 0, "success": True, "data": {"id": house_id, "status": 1}}
 
 
 # ==================== 内部工具函数 ====================
+
+def _time_display_text(house: House) -> str:
+    """给前端一个可直接展示的时间说明，明确区分发布时间与维护时间"""
+    if house.publish_time:
+        return house.publish_time.strftime("%Y-%m-%d")
+    if house.last_active_time:
+        return f"{house.last_active_time.strftime('%Y-%m-%d')}(维护)"
+    return ""
+
 
 def _house_to_response(house: House) -> dict:
     """将 House ORM 对象转换为响应字典（兼容前端字段名）"""
@@ -266,6 +303,9 @@ def _house_to_response(house: House) -> dict:
         "onlineURL": house.source_url,
         "pubTime": house.publish_time.isoformat() if house.publish_time else "",
         "publishDate": house.publish_time.strftime("%Y-%m-%d") if house.publish_time else "",
+        "lastActiveTime": house.last_active_time.isoformat() if house.last_active_time else "",
+        "lastActiveDate": house.last_active_time.strftime("%Y-%m-%d") if house.last_active_time else "",
+        "timeText": _time_display_text(house),
         "timestamp": int(ref_time.timestamp() * 1000) if ref_time else 0,
         "createTime": house.create_time.isoformat() if house.create_time else "",
         "updateTime": house.update_time.isoformat() if house.update_time else "",

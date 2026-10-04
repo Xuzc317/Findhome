@@ -1,14 +1,33 @@
 """
 豆瓣租房小组爬虫
-基于公开网页抓取，无需登录
+基于公开网页抓取。未登录时可用，但豆瓣有频率风控：
+一旦返回“请点击下方按钮继续浏览”的中间页，本 Adapter 会如实上报 blocked，
+不会尝试绕过；此时可配置 DOUBAN_COOKIE（用户本人浏览器登录态）后重试。
+
+列表页表结构（4 列）:
+    td.title 标题 | td(无class) 作者 | td.r-count 回应数 | td.time 最后回应时间
+注意：td.time 是“最后回应时间”，豆瓣小组列表页并不展示独立发布时间，
+因此入库时写入 publish_time（作为该帖最近活跃时间），并同时记录原始文本。
 """
 
 import re
-import json
-from typing import List, Optional
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+
 from bs4 import BeautifulSoup
-from backend.crawlers.base import BaseCrawler, RawHouse, extract_price
+
+from backend.crawlers.base import (
+    STATUS_BLOCKED,
+    STATUS_EMPTY,
+    STATUS_ERROR,
+    STATUS_NEEDS_LOGIN,
+    STATUS_OK,
+    STATUS_UNAVAILABLE,
+    BaseCrawler,
+    RawHouse,
+    detect_block,
+    extract_price,
+)
 
 
 class DoubanCrawler(BaseCrawler):
@@ -17,56 +36,101 @@ class DoubanCrawler(BaseCrawler):
     SOURCE_NAME = "douban"
     DISPLAY_NAME = "豆瓣租房"
     NEEDS_LOGIN = False
+    MIN_REQUEST_INTERVAL = 5.0  # 豆瓣风控敏感，放慢请求
 
-    # 豆瓣租房小组列表（可按需扩展）
-    GROUPS = {
-        "北京": ["26926", "279962"],      # 北京租房、北京租房豆瓣
-        "上海": ["shanghaizufang", "383866"],  # 上海租房、上海租房小组
-        "深圳": ["106955", "szsh"],       # 深圳租房、深圳租房团
-        "广州": ["gzsh"],                 # 广州租房
-        "杭州": ["hzsh"],                 # 杭州租房
-        "成都": ["cdzufang"],             # 成都租房
+    # 城市 -> 小组 ID 列表
+    # 标注 [已验证] 的为实际采集到过数据的 ID；其余需在未被风控时验证
+    GROUPS: Dict[str, List[str]] = {
+        "北京": ["26926", "279962"],        # [已验证] 2026-10-04 实采 59 条
+        "上海": ["shanghaizufang"],         # [待验证]
+        "深圳": ["106955"],                 # [待验证]
+        "广州": ["gzsh"],                   # [待验证]
+        "杭州": ["hzsh"],                   # [待验证]
+        "成都": ["cdzufang"],               # [待验证]
     }
+    SUPPORTED_CITIES = {city: ",".join(ids) for city, ids in GROUPS.items()}
 
-    def __init__(self, cookie: str = ""):
+    DETAIL_AVAILABLE = True  # 未被风控时可抓详情
+
+    def __init__(self, cookie: str = "", groups: Optional[List[str]] = None):
         super().__init__(cookie=cookie)
         self.base_url = "https://www.douban.com/group"
+        self.groups_override = groups or []
+        self.raw_page_text: str = ""
+
+    # ---------- 采集 ----------
 
     async def search(self, city: str, keyword: str = "", page: int = 1) -> List[RawHouse]:
         """搜索豆瓣租房小组帖子"""
-        houses = []
-        group_ids = self.GROUPS.get(city, [])
+        houses: List[RawHouse] = []
+        group_ids = self.groups_override or self.GROUPS.get(city, [])
 
         if not group_ids:
-            print(f"⚠️ 豆瓣: 未配置城市 {city} 的小组")
+            self.set_status(STATUS_UNAVAILABLE, f"未配置城市 {city} 的小组 ID，可用 --group 指定")
             return houses
+
+        blocked_reason = None
+        parsed_any = False
 
         for group_id in group_ids:
             try:
-                group_houses = await self._fetch_group(group_id, city, keyword, page)
-                houses.extend(group_houses)
-            except Exception as e:
-                print(f"❌ 豆瓣小组 {group_id} 抓取失败: {e}")
+                group_houses, reason = await self._fetch_group(group_id, city, keyword, page)
+            except Exception as e:  # 网络异常不应中断其他小组
+                reason = f"请求异常: {type(e).__name__}: {e}"
+                group_houses = []
 
+            if reason:
+                blocked_reason = reason
+                # 被风控/需要登录时继续试下一个小组没有意义，直接停止
+                if "拦截" in reason or "登录" in reason:
+                    break
+                continue
+
+            parsed_any = True
+            houses.extend(group_houses)
+
+        if blocked_reason and not parsed_any:
+            # 区分“被风控”与“需要登录”
+            status = STATUS_NEEDS_LOGIN if "登录" in blocked_reason else STATUS_BLOCKED
+            self.set_status(status, blocked_reason)
+            return []
+
+        if not houses:
+            self.set_status(STATUS_EMPTY, f"{city} 未解析到帖子（可能小组 ID 失效或该页无内容）")
+            return []
+
+        self.set_status(STATUS_OK, f"解析到 {len(houses)} 条")
         return houses
 
-    async def _fetch_group(self, group_id: str, city: str, keyword: str, page: int) -> List[RawHouse]:
-        """抓取单个小组的帖子列表
-
-        豆瓣小组讨论列表的真实表结构（4 列）:
-            td.title  标题   |   td(无class) 作者   |   td.r-count 回应数   |   td.time 最后回应时间
-        """
+    async def _fetch_group(self, group_id: str, city: str, keyword: str, page: int):
+        """抓取单个小组的帖子列表。返回 (房源列表, 失败原因或None)"""
         url = f"{self.base_url}/{group_id}/discussion"
         params = {"start": (page - 1) * 25}
         if keyword:
             params["keyword"] = keyword
 
-        response = await self.client.get(url, params=params)
-        response.raise_for_status()
+        response = await self.get(url, params=params)
+
+        if response.status_code == 429:
+            return [], "HTTP 429 请求过于频繁（豆瓣限流），拦截特征: 429"
+        if response.status_code != 200:
+            return [], f"HTTP {response.status_code}"
+
+        self.raw_page_text = response.text
+
+        reason = detect_block(response.text)
+        if reason:
+            return [], reason
 
         soup = BeautifulSoup(response.text, "html.parser")
-        houses = []
+        table = soup.select_one("table.olt")
+        if table is None:
+            # 200 但没有列表 → 可能是空小组、ID 失效或结构变化
+            title = soup.select_one("h1")
+            hint = title.get_text(strip=True)[:30] if title else "无 h1"
+            return [], f"页面无 table.olt（{hint}）"
 
+        houses: List[RawHouse] = []
         for tr in soup.select("table.olt tr"):
             title_td = tr.find("td", class_="title")
             if not title_td:
@@ -90,17 +154,11 @@ class DoubanCrawler(BaseCrawler):
             # 作者（第 2 列）
             publisher = tds[1].get_text(strip=True) if len(tds) > 2 else ""
 
-            # 发布时间：优先取 td.time，否则取最后一列
+            # 时间：优先 td.time，否则最后一列
             time_td = tr.find("td", class_="time") or (tds[-1] if tds else None)
-            pub_time = self._parse_time(time_td.get_text(strip=True)) if time_td else None
+            time_text = time_td.get_text(strip=True) if time_td else ""
+            parsed_time = self._parse_time(time_text)
 
-            # 提取价格
-            price = self._extract_price(title)
-
-            # 判断出租类型
-            rent_type = self._detect_rent_type(title)
-
-            # 帖子 ID
             id_match = re.search(r"/topic/(\d+)", href)
 
             house = RawHouse(
@@ -109,42 +167,47 @@ class DoubanCrawler(BaseCrawler):
                 source_url=href,
                 title=title,
                 city=city,
-                price=price,
-                rent_type=rent_type,
-                publish_time=pub_time,
-                publisher=publisher,
+                price=self._extract_price(title),
+                rent_type=self._detect_rent_type(title),
+                publish_time=parsed_time,
+                publisher=publisher or None,
                 tags=[city, "豆瓣小组"],
+                raw_data={
+                    "group_id": group_id,
+                    "time_text": time_text,
+                    "time_semantics": "最后回应时间(豆瓣列表页不展示独立发布时间)",
+                    "reply_count": tds[2].get_text(strip=True) if len(tds) > 2 else "",
+                },
             )
             houses.append(house)
 
-        return houses
+        return houses, None
+
+    # ---------- 详情 ----------
 
     async def fetch_detail(self, source_url: str) -> Optional[RawHouse]:
-        """获取帖子详情"""
+        """获取帖子详情（正文/图片/作者）"""
         try:
-            response = await self.client.get(source_url)
-            response.raise_for_status()
+            response = await self.get(source_url)
+            if response.status_code != 200:
+                return None
+            if detect_block(response.text):
+                return None
 
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # 获取正文
             topic_content = soup.select_one(".topic-content")
+            description = ""
+            images: List[str] = []
             if topic_content:
-                # 移除script和style
                 for script in topic_content(["script", "style"]):
                     script.decompose()
                 description = topic_content.get_text(separator="\n", strip=True)
-            else:
-                description = ""
+                for img in topic_content.select("img"):
+                    src = img.get("src") or img.get("data-src") or ""
+                    if src:
+                        images.append(src)
 
-            # 获取图片
-            images = []
-            for img in soup.select(".topic-content img"):
-                src = img.get("src", "")
-                if src:
-                    images.append(src)
-
-            # 获取发布者
             publisher = ""
             user_card = soup.select_one(".user-card")
             if user_card:
@@ -153,14 +216,14 @@ class DoubanCrawler(BaseCrawler):
             return RawHouse(
                 source=self.SOURCE_NAME,
                 source_url=source_url,
-                description=description,
+                description=description or None,
                 images=images,
-                publisher=publisher,
+                publisher=publisher or None,
             )
-
-        except Exception as e:
-            print(f"❌ 获取详情失败 {source_url}: {e}")
+        except Exception:
             return None
+
+    # ---------- 解析工具 ----------
 
     def _extract_price(self, text: str) -> Optional[int]:
         """从标题提取价格（保守策略，避免把手机号识别成租金）"""
@@ -201,7 +264,6 @@ class DoubanCrawler(BaseCrawler):
                 value = value.replace(year=value.year - 1)
             return value
 
-        # "今天 10:23" / "昨天 10:23"
         for prefix, day_offset in (("今天", 0), ("昨天", 1)):
             if text.startswith(prefix):
                 rest = text[len(prefix):].strip()
@@ -212,7 +274,6 @@ class DoubanCrawler(BaseCrawler):
                 value = now.replace(hour=h, minute=m, second=0, microsecond=0)
                 return value - timedelta(days=day_offset)
 
-        # "2024-01-15 10:23" 或 "2024-01-15"
         match = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?$", text)
         if match:
             year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
@@ -223,7 +284,6 @@ class DoubanCrawler(BaseCrawler):
             except ValueError:
                 return now
 
-        # "10-04 05:59" 或 "10-04"（无年份）
         match = re.match(r"^(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?$", text)
         if match:
             month, day = int(match.group(1)), int(match.group(2))
@@ -231,7 +291,6 @@ class DoubanCrawler(BaseCrawler):
             minute = int(match.group(4)) if match.group(4) else 0
             return _with_year(month, day, hour, minute)
 
-        # "05:59"（今天）
         match = re.match(r"^(\d{1,2}):(\d{2})$", text)
         if match:
             return now.replace(hour=int(match.group(1)), minute=int(match.group(2)),
@@ -240,12 +299,41 @@ class DoubanCrawler(BaseCrawler):
         # 无法识别：返回 None，避免把采集时间误当成发布时间
         return None
 
+    # ---------- 健康检查 ----------
+
     async def check_health(self) -> dict:
-        """检查健康状态"""
+        """真实探针：请求一个已知小组并确认能解析出帖子，而不只是看 HTTP 200"""
+        group_id = self.GROUPS["北京"][0]
+        url = f"{self.base_url}/{group_id}/discussion"
         try:
-            response = await self.client.get("https://www.douban.com", timeout=10)
-            if response.status_code == 200:
-                return {"status": "ok", "message": "豆瓣可访问"}
-            return {"status": "error", "message": f"HTTP {response.status_code}"}
+            response = await self.get(url)
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            self.set_status(STATUS_ERROR, f"{type(e).__name__}: {e}")
+            return {"status": STATUS_ERROR, "message": str(e), "verified": False}
+
+        if response.status_code == 429:
+            msg = "HTTP 429 被限流，需等待冷却或配置 DOUBAN_COOKIE"
+            self.set_status(STATUS_BLOCKED, msg)
+            return {"status": STATUS_BLOCKED, "message": msg, "verified": False}
+
+        if response.status_code != 200:
+            msg = f"HTTP {response.status_code}"
+            self.set_status(STATUS_ERROR, msg)
+            return {"status": STATUS_ERROR, "message": msg, "verified": False}
+
+        reason = detect_block(response.text)
+        if reason:
+            msg = f"豆瓣返回风控中间页（{reason}），配置 DOUBAN_COOKIE 可提高成功率"
+            self.set_status(STATUS_BLOCKED, msg)
+            return {"status": STATUS_BLOCKED, "message": msg, "verified": False}
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        rows = len(soup.select("table.olt tr"))
+        if rows == 0:
+            msg = "页面正常但未解析到帖子列表（小组 ID 可能失效或页面结构变化）"
+            self.set_status(STATUS_UNAVAILABLE, msg)
+            return {"status": STATUS_UNAVAILABLE, "message": msg, "verified": False}
+
+        msg = f"可访问，小组 {group_id} 解析到 {rows} 行"
+        self.set_status(STATUS_OK, msg)
+        return {"status": STATUS_OK, "message": msg, "verified": True}

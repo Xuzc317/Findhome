@@ -26,6 +26,28 @@ class HouseSearchService:
     def __init__(self, db: Session):
         self.db = db
 
+    # 参与关键词匹配的文本列
+    TEXT_COLUMNS = (
+        House.title,
+        House.description,
+        House.tags,
+        House.address,
+        House.community,
+        House.publisher,
+    )
+
+    @classmethod
+    def _text_match(cls, term: str):
+        """构造“任一文本列包含 term”的条件。
+
+        必须对可空列做 COALESCE：SQL 三值逻辑下 `NULL LIKE '%x%'` 结果是 NULL，
+        取反后仍是 NULL，会导致“任意一个排除词清空全部结果”。
+        """
+        return or_(*[
+            func.coalesce(column, "").contains(term, autoescape=True)
+            for column in cls.TEXT_COLUMNS
+        ])
+
     def search(self, params: HouseSearchParams) -> Tuple[List[House], int]:
         """搜索房源，返回 (房源列表, 总数)"""
         query = self.db.query(House)
@@ -51,25 +73,18 @@ class HouseSearchService:
             query = query.filter(House.rent_type == params.rent_type)
 
         # 发布时间筛选
+        # 有效时间 = 发布时间，缺失时回退到平台展示的“最近维护时间”；
+        # 两者都没有的房源不参与时间筛选（不猜测时间）
         if params.interval_day and params.interval_day > 0:
             since = datetime.now() - timedelta(days=params.interval_day)
-            query = query.filter(House.publish_time >= since)
+            effective_time = func.coalesce(House.publish_time, House.last_active_time)
+            query = query.filter(effective_time.isnot(None), effective_time >= since)
 
         # 关键词包含筛选
         if params.keyword:
             keywords = [k.strip() for k in params.keyword.split() if k.strip()]
             if keywords:
-                conditions = []
-                for kw in keywords:
-                    conditions.append(
-                        or_(
-                            House.title.contains(kw),
-                            House.description.contains(kw),
-                            House.tags.contains(kw),
-                            House.address.contains(kw),
-                            House.community.contains(kw),
-                        )
-                    )
+                conditions = [self._text_match(kw) for kw in keywords]
                 query = query.filter(and_(*conditions))
 
         # 关键词排除筛选
@@ -77,13 +92,7 @@ class HouseSearchService:
             excludes = [k.strip() for k in params.keyword_exclude.split() if k.strip()]
             if excludes:
                 for ex in excludes:
-                    query = query.filter(
-                        ~or_(
-                            House.title.contains(ex),
-                            House.description.contains(ex),
-                            House.tags.contains(ex),
-                        )
-                    )
+                    query = query.filter(~self._text_match(ex))
 
         # 通勤时间筛选
         if params.commute_max_duration is not None:
@@ -94,9 +103,15 @@ class HouseSearchService:
                 )
             )
 
-        # 风险评分筛选
+        # 风险评分筛选（全部基于可解释规则计算出的分值）
         if params.max_agent_score is not None:
             query = query.filter(House.agent_score <= params.max_agent_score)
+        if params.max_suspicious_score is not None:
+            query = query.filter(House.suspicious_score <= params.max_suspicious_score)
+        if params.max_ad_score is not None:
+            query = query.filter(House.ad_score <= params.max_ad_score)
+        if params.min_confidence_score is not None:
+            query = query.filter(House.confidence_score >= params.min_confidence_score)
 
         # 隐藏重复房源
         if params.hide_duplicates:
@@ -133,12 +148,7 @@ class HouseSearchService:
             query = query.filter(House.source == source)
 
         if keyword:
-            query = query.filter(
-                or_(
-                    House.title.contains(keyword),
-                    House.description.contains(keyword),
-                )
-            )
+            query = query.filter(self._text_match(keyword.strip()))
 
         if rent_type is not None and rent_type != -1:
             query = query.filter(House.rent_type == rent_type)

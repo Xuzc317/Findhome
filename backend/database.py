@@ -54,8 +54,39 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine)
 
 
 def init_db():
-    """初始化数据库（创建所有表）"""
+    """初始化数据库（创建所有表 + 轻量迁移）
+
+    可重复运行：已存在的表不会被重建，缺失的列会按需补齐。
+    """
     Base.metadata.create_all(bind=engine)
+    _apply_light_migrations()
+
+
+# 新增列 -> DDL 片段（SQLite 的 ADD COLUMN 是幂等安全的：先查 PRAGMA 再补）
+_LIGHT_MIGRATIONS = {
+    "houses": {
+        "last_active_time": "DATETIME",
+    },
+}
+
+
+def _apply_light_migrations():
+    """为已存在的表补齐新增列，避免老库因缺列而查询报错"""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        for table, columns in _LIGHT_MIGRATIONS.items():
+            if table not in existing_tables:
+                continue
+            current = {col["name"] for col in inspector.get_columns(table)}
+            for column, ddl_type in columns.items():
+                if column in current:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+                print(f"🔧 迁移: {table}.{column} 已补齐")
 
 
 def get_db() -> Session:

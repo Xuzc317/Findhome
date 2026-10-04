@@ -107,6 +107,69 @@ def main():
     prices = [h["price"] for h in (safe_json(r).get("data") or []) if h.get("price")]
     c.check("按价格升序排序", prices == sorted(prices), f"prices={prices[:6]}")
 
+    # ---- 筛选闭环（价格/排除词/时间/风险）----
+    c.section("【筛选闭环】")
+    base_body = safe_json(c.get("/v3/houses", params={"pageSize": 200}))
+    base_total = base_body.get("total") or 0
+    base_items = base_body.get("data") or []
+
+    # 排除关键词：排除后条数必须变化且不能清零（除非确实全部命中）
+    if base_items:
+        term = "中介"
+        hit = sum(1 for h in base_items if term in (h.get("title") or ""))
+        after = safe_json(c.get("/v3/houses", params={"pageSize": 200, "keywordExclude": term})).get("total")
+        c.check("排除关键词生效（NULL 列不会清空结果）",
+                after is not None and (after == base_total - hit if hit else after == base_total),
+                f"命中 {hit} 条 → 排除后 {after}（排除前 {base_total}）")
+
+        r = c.get("/v3/houses", params={"pageSize": 200, "intervalDay": 30})
+        c.check("发布时间筛选生效（intervalDay）", isinstance(safe_json(r).get("total"), int),
+                f"30天内 total={safe_json(r).get('total')}")
+
+        r = c.get("/v3/houses", params={"pageSize": 200, "minConfidenceScore": 70})
+        c.check("风险筛选生效（minConfidenceScore）",
+                (safe_json(r).get("total") or 0) <= base_total,
+                f"可信度≥70 → {safe_json(r).get('total')}")
+
+        r = c.get("/v3/houses", params={"pageSize": 200, "maxAgentScore": 30})
+        c.check("风险筛选生效（maxAgentScore）",
+                (safe_json(r).get("total") or 0) <= base_total,
+                f"中介分≤30 → {safe_json(r).get('total')}")
+
+        r = c.get("/v3/houses", params={"pageSize": 200, "fromPrice": 2000, "toPrice": 6000})
+        price_items = safe_json(r).get("data") or []
+        in_range = all(2000 <= (h.get("price") or 0) <= 6000 for h in price_items)
+        c.check("价格区间筛选生效", in_range,
+                f"2000-6000 → {len(price_items)} 条全部在区间内")
+
+        has_time_field = all("timeText" in h for h in base_items[:5])
+        c.check("房源含 timeText（区分发布时间/维护时间）", has_time_field)
+
+        fake = [h for h in base_items if "demo.local" in (h.get("onlineURL") or "")]
+        c.check("列表不含演示数据链接", not fake, f"演示数据 {len(fake)} 条")
+    else:
+        c.skipped += 5
+        print("  ⏭️  无数据，跳过筛选闭环校验")
+
+    # ---- 数据源能力声明 ----
+    c.section("【数据源能力 /sources/health】")
+    body = safe_json(c.get("/sources/health"))
+    sources_health = body.get("data") or []
+    c.check("返回 code=0 且包含 4 个 Adapter", body.get("code") == 0 and len(sources_health) >= 4,
+            f"{len(sources_health)} 个")
+    if sources_health:
+        keys = {"source", "needs_login", "detail_available", "supported_cities", "houses_count"}
+        missing = keys - set(sources_health[0].keys())
+        c.check("能力声明字段完整", not missing, f"缺失={missing or '无'}")
+        detail_flags = {s["source"]: s["detail_available"] for s in sources_health}
+        c.check("详情不可用的来源带有原因说明",
+                all(s.get("detail_unavailable_reason")
+                    for s in sources_health if not s["detail_available"]),
+                str(detail_flags))
+        print("  ℹ️  当前各源库存: " + ", ".join(
+            f"{s['source']}={s['houses_count']}" for s in sources_health))
+        print("  ℹ️  执行 `python crawl.py health` 可运行真实网络探针（含被拦截/需登录原因）")
+
     # ---- 城市接口（前端筛选栏依赖）----
     c.section("【城市 /v2/cities】")
     r = c.get("/v2/cities", params={"fields": "id,city,sources"})

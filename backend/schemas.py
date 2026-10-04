@@ -66,6 +66,7 @@ class HouseResponse(HouseBase):
     area_size: Optional[float] = None
     orientation: Optional[str] = None
     crawl_time: datetime
+    last_active_time: Optional[datetime] = None
     publisher: Optional[str] = None
     images: Optional[str] = "[]"
     tags: Optional[str] = None
@@ -100,8 +101,11 @@ class HouseSearchParams(BaseModel):
     sort_order: str = "desc"  # asc/desc
     # 通勤筛选
     commute_max_duration: Optional[int] = None
-    # 风险筛选
+    # 风险筛选（均为可解释规则分值）
     max_agent_score: Optional[int] = None
+    max_ad_score: Optional[int] = None
+    max_suspicious_score: Optional[int] = None
+    min_confidence_score: Optional[int] = None
     hide_duplicates: bool = True
 
 
@@ -132,6 +136,9 @@ class CrawlRequest(BaseModel):
     source: str
     city: Optional[str] = None
     keyword: Optional[str] = None
+    pages: int = 1
+    rent_type: int = 0          # 仅贝壳: 0全部 1合租 3整租
+    with_detail: int = 0        # 为前 N 条抓取详情
 
 
 class CrawlResponse(BaseModel):

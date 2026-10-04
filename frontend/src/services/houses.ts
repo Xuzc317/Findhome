@@ -22,6 +22,11 @@ export default class HousesService extends BaseService {
       params.district = props.district;
     }
     if (!!props.keyword) params.keyword = props.keyword;
+    if (props.keywordExclude) params.keywordExclude = props.keywordExclude;
+    if (props.maxAgentScore) params.maxAgentScore = props.maxAgentScore;
+    if (props.minConfidenceScore) {
+      params.minConfidenceScore = props.minConfidenceScore;
+    }
     if (
       props.rentType !== undefined && props.rentType !== null &&
       props.rentType != -1

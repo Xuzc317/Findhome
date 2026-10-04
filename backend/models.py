@@ -48,7 +48,8 @@ class House(Base):
     orientation = Column(String(32), nullable=True, comment="朝向")
 
     # 时间
-    publish_time = Column(DateTime, nullable=True, comment="发布时间")
+    publish_time = Column(DateTime, nullable=True, comment="发布时间(平台未展示则为空)")
+    last_active_time = Column(DateTime, nullable=True, comment="平台展示的最近维护/活跃时间")
     crawl_time = Column(DateTime, default=datetime.now, comment="采集时间")
 
     # 发布者

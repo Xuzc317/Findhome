@@ -22,7 +22,7 @@ export const HomeFilterOptions = {
     { value: -1, label: "不限制" },
     { value: 1, label: "1天内" },
     { value: 3, label: "3天内" },
-    { value: 1707, label: "7天内" },
+    { value: 7, label: "7天内" },
     { value: 30, label: "30天内" },
   ],
 };

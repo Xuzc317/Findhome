@@ -25,3 +25,48 @@
   background-color: rgba(0,0,0,.03);
   border-radius: 30px;
 }
+
+/* 输入型筛选条件（价格区间 / 排除关键词） */
+.filterLabel {
+  margin-right: 8px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.filterInput {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+}
+
+.filterInput:focus {
+  border-color: #00a3ca;
+}
+
+.filterDash {
+  margin: 0 6px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.applyBtn {
+  margin-left: 8px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  background-color: #00a3ca;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.clearBtn {
+  margin-left: auto;
+  margin-right: 16px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}

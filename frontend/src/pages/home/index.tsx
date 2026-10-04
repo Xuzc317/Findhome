@@ -36,8 +36,8 @@ function CarouselContainer() {
         <a href="https://pdf.r2049.cn/?lang=zh_CN" target="_blank" className={styles["carousel-item"]}>
           R2049 PDF：免安装在线PDF工具集~
         </a>
-        <a href="https://mp.weixin.qq.com/s/4nC2zZm2a6Tn4LL7H-oC8w" target="_blank" className={styles["carousel-item"]}>
-          关注【人生删除指南】微信公众号获取租房小程序。
+        <a href="/houses-list" className={styles["carousel-item"]}>
+          本地版已就绪：直接搜索、筛选并打开原始房源链接。
         </a>
         <a href="https://wj.qq.com/s/2953926/aabe" target="_blank" className={styles["carousel-item"]}>
           帮我们做得更好?
@@ -58,7 +58,7 @@ function Banner() {
         <h2 className={styles.slogan}>满大街找租房心力交瘁？试试换个方式直接在地图上搜租房!</h2>
         <p className={styles["sub-slogan"]}>多平台房源爬虫 + 在线地图强力驱动,帮助你迅速找到合适房源。</p>
         <p className={styles["sub-slogan"]}>
-          微信小程序"地图搜租房"已上线，欢迎关注【人生删除指南】微信公众号体验反馈。
+          本地版只在你的电脑上运行，不跳转小程序。建议使用电脑浏览器搜索和核验房源。
         </p>
         <Button
           danger
@@ -181,7 +181,7 @@ function Introduction() {
           >
             新增租房数据源？
           </div>
-          <p>你在的城市没有数据？没有对应的租房小组数据？请联系公众号【人生删除指南】或者此处自助邮件我。</p>
+          <p>你在的城市没有数据？优先检查对应数据源是否已采集，或在 sources 目录增加一个新的 Adapter。</p>
         </div>
       </div>
     </div>
@@ -258,8 +258,7 @@ function Contact() {
           </div>
         </div>
         <div className={styles.ewm}>
-          <img src="./../images/ewm.jpg" />
-          <span>( 欢迎关注【人生删除指南】微信公众号获取租房技巧/体验地图搜租房小程序/房源精选. )</span>
+          <span>本地工具不依赖微信公众号或小程序。房源请以原始链接页面为准。</span>
         </div>
       </div>
     </div>

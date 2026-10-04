@@ -106,7 +106,9 @@ function ItemCard(props: { item: HouseListItem }) {
         <Tag color="magenta" className="ml-2">{item.displaySource}</Tag>
         <div style={{ flex: 1 }}></div>
         <div className={styles.time}>
-          {dayjs(item.createTime).format("YYYY-MM-DD")}
+          {/* 优先展示平台时间（发布时间；缺失时为维护时间并标注），
+              都没有才回退到采集时间，避免把采集时间误当成发布时间 */}
+          {item.timeText || `采集 ${dayjs(item.createTime).format("YYYY-MM-DD")}`}
         </div>
       </div>
     </div>

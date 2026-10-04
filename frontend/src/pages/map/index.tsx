@@ -20,9 +20,10 @@ import { Helmet } from "react-helmet";
 import { useSearchParams } from "react-router-dom";
 import styles from "./styles.module.css";
 
-// 高德地图 Key 通过 frontend/.env 的 VITE_AMAP_KEY 注入；
-// 默认值仅为兼容原项目，强烈建议换成自己在 https://lbs.amap.com 申请的 Key。
-const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || "REMOVED_UPSTREAM_EXAMPLE_KEY";
+// 高德地图 Key 只能来自本地环境变量（frontend/.env 的 VITE_AMAP_KEY），
+// 不硬编码到代码仓库中。未配置时地图页会给出明确提示，而不是加载失败的脚本。
+const AMAP_KEY = import.meta.env.VITE_AMAP_KEY || "";
+const AMAP_KEY_MISSING = !AMAP_KEY;
 const AMAP_SCRIPT_ID = "house-search-amap";
 const AMAP_UI_SCRIPT_ID = "house-search-amap-ui";
 
@@ -90,6 +91,11 @@ function loadScript(id: string, src: string) {
 
 async function loadAmap() {
   if (typeof AMap !== "undefined") return;
+  if (AMAP_KEY_MISSING) {
+    throw new Error(
+      "未配置高德地图 Key：请在 frontend/.env 中设置 VITE_AMAP_KEY 后重启前端",
+    );
+  }
   const plugins = [
     "AMap.Scale",
     "AMap.Geocoder",
