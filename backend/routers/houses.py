@@ -316,6 +316,11 @@ def _house_to_response(house: House, distance=None) -> dict:
     except Exception:
         pass
 
+    # 条件识别（电梯 / 新旧 / 老破小）—— 实时计算，只读平台原文
+    from backend.services.condition import analyze_condition, condition_summary
+    condition = analyze_condition(house.title, house.description,
+                                  tags=house.tags, floor_text=house.raw_data)
+
     # 生成 icon（按价格分色）
     icon = ""
     if house.price and house.price > 0:
@@ -394,6 +399,15 @@ def _house_to_response(house: House, distance=None) -> dict:
         "walkMinutes": distance.walk_minutes if distance else None,
         "straightMeters": distance.straight_meters if distance else None,
         "walkStatus": distance.status if distance else None,
+
+        # ---- 电梯 / 新旧（事实与推断分开）----
+        "elevator": condition.elevator,                 # True有 / False无 / None未标注
+        "elevatorEvidence": condition.elevator_evidence,
+        "elevatorHint": condition.elevator_hint,        # 由楼层推断，非事实
+        "newnessScore": condition.newness_score,
+        "newnessSignals": condition.newness_signals,
+        "oldSmall": condition.old_small,
+        "conditionSummary": condition_summary(condition),
     }
 
 

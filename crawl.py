@@ -225,12 +225,44 @@ def run_distance(city: str, station_name: str, limit: int, max_calls: int,
         db.close()
 
 
+def run_match(profile_name: str, compute_walk: bool = True,
+              locate_missing: bool = False):
+    """按需求档案挑房：地铁站 + 预算 + 房型 + 真实步行距离 + 条件"""
+    from backend.database import SessionLocal
+    from backend.services import match as match_service
+    from backend.services.amap import AmapClient
+
+    try:
+        profile = match_service.Profile.load(profile_name)
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+        print("   可用档案：", end="")
+        import glob
+        files = glob.glob(os.path.join("data", "profiles", "*.json"))
+        print("、".join(os.path.basename(f)[:-5] for f in files) or "（无）")
+        return
+
+    db = SessionLocal()
+    amap = AmapClient()
+    try:
+        if compute_walk and not amap.available:
+            print("⚠️  未配置 AMAP_WEB_KEY：只能按直线距离预筛，无法确认步行时间")
+        result = match_service.match(
+            db, profile, amap=amap,
+            compute_walk=compute_walk, locate_missing=locate_missing)
+        print(match_service.render_report(result))
+    finally:
+        amap.close()
+        db.close()
+
+
 async def main():
     parser = argparse.ArgumentParser(description="Findhome 采集与地理工具")
     parser.add_argument("source",
                         choices=["douban", "beike", "xianyu", "xiaohongshu",
-                                 "all", "health", "metro", "locate", "distance"],
-                        help="数据源名称，或 metro/locate/distance 工具")
+                                 "all", "health", "metro", "locate", "distance",
+                                 "match"],
+                        help="数据源名称，或 metro/locate/distance/match 工具")
     parser.add_argument("--city", default=None,
                         help="目标城市（采集默认北京；metro/locate/distance 默认深圳）")
     parser.add_argument("--keyword", default="", help="搜索关键词")
@@ -255,6 +287,13 @@ async def main():
     parser.add_argument("--all-houses", action="store_true",
                         help="[locate/distance] 包含已处理过的房源，重算一遍")
     parser.add_argument("--station", default="", help="[distance] 地铁站名，如 车公庙")
+    # match 相关
+    parser.add_argument("--profile", default="longhua",
+                        help="[match] 需求档案名（data/profiles/<名字>.json）")
+    parser.add_argument("--no-walk", action="store_true",
+                        help="[match] 不计算真实步行距离（只按直线预筛，快但不够准）")
+    parser.add_argument("--locate-missing", action="store_true",
+                        help="[match] 顺带给缺坐标的候选房源先做定位")
 
     args = parser.parse_args()
 
@@ -276,6 +315,11 @@ async def main():
             return
         run_distance(args.city or "深圳", args.station, args.limit,
                      args.max_calls, only_missing=not args.all_houses)
+        return
+
+    if args.source == "match":
+        run_match(args.profile, compute_walk=not args.no_walk,
+                  locate_missing=args.locate_missing)
         return
 
     if args.source == "health":

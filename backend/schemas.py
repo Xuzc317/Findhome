@@ -265,3 +265,21 @@ class StationDistanceReport(BaseModel):
     status: str = "ok"                  # ok/no_route/error
     message: Optional[str] = None
     provider: str = "amap"
+
+
+# ==================== 需求匹配 ====================
+
+class ProfileSaveRequest(BaseModel):
+    """保存"我的通勤选址条件" """
+    name: str
+    city: str = "深圳"
+    stations: List[str] = []
+    max_straight_m: int = 1000
+    max_walk_minutes: int = 20
+    price_min: Optional[int] = None
+    price_max: Optional[int] = None
+    layouts: List[str] = []          # studio / 1b1l / 2b1l / 3b1l / 4b+
+    require_elevator: bool = False
+    min_newness_score: Optional[int] = None
+    avoid_old_small: bool = True
+    notes: str = ""

@@ -1,0 +1,31 @@
+{
+  "name": "longhua",
+  "city": "深圳",
+  "stations": [
+    "长圳",
+    "上屋",
+    "官田",
+    "阳台山东",
+    "元芬",
+    "龙胜",
+    "上芬",
+    "红山",
+    "清湖",
+    "龙华",
+    "上塘",
+    "长岭陂"
+  ],
+  "max_straight_m": 1000,
+  "max_walk_minutes": 20,
+  "price_min": 1200,
+  "price_max": 2500,
+  "layouts": [
+    "studio",
+    "1b1l",
+    "2b1l"
+  ],
+  "require_elevator": false,
+  "min_newness_score": null,
+  "avoid_old_small": true,
+  "notes": "用户需求：6号线(长圳/上屋/官田/阳台山东/元芬/龙胜/上芬/红山) 4号线(清湖/龙华/龙胜/上塘/红山) 5号线(长岭陂)；直线≤1km且步行≤20分钟；预算1200-2500；单间/1房1厅/2房1厅；希望有电梯、新一点、不要老破小。elevator 未设为硬性条件（平台很少标注），而是在结果里逐条标明状态与推断。"
+}
