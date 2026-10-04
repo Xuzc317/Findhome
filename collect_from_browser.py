@@ -241,8 +241,10 @@ async def collect_xiaohongshu(stations: List[str], suffixes: List[str],
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="通过常驻浏览器采集闲鱼/小红书")
+    # 贝壳（beike）保留在 choices 里以便将来复用，但不在日常采集范围内：
+    # 实测其登录/验证码校验对自动化过于严格，用户已决定放弃（见需求档案）。
     parser.add_argument("platform", choices=["xianyu", "xiaohongshu", "beike"],
-                        default="xianyu", nargs="?", help="采集哪个平台")
+                        default="xianyu", nargs="?", help="采集哪个平台（贝壳已弃用）")
     parser.add_argument("--station", action="append", default=[],
                         help="地铁站名，可重复；不传则用 --profile 里的站点")
     parser.add_argument("--profile", default="", help="需求档案名（取其站点清单）")
