@@ -101,7 +101,7 @@ function ItemCard(props: { item: HouseListItem }) {
       <div className={styles.title}>{item.title}</div>
       <div className={styles.bottom}>
         <div className={styles.price}>
-          ￥{item.price === -1 ? "暂无价格" : item.price}
+          {item.price > 0 ? `￥${item.price}` : "价格未提供"}
         </div>
         <Tag color="magenta" className="ml-2">{item.displaySource}</Tag>
         <div style={{ flex: 1 }}></div>

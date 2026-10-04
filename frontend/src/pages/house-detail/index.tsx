@@ -40,7 +40,8 @@ export default function HouseDetail() {
             <Tag color="orange">{house.displayRentType}</Tag>
             <Tag color="magenta">{house.displaySource}</Tag>
             <div className={styles.price}>
-              <span>{house.price == -1 ? "未知" : house.price}</span>/月
+              <span>{house.price > 0 ? `￥${house.price}` : "价格未知"}</span>
+              {house.price > 0 && <span className="text-sm text-gray-400">/月</span>}
             </div>
           </div>
           <div className="mt-4">所在城市：{house.city}</div>
