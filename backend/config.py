@@ -57,7 +57,10 @@ class Settings(BaseSettings):
     # ==================== 大模型 ====================
     # 供应商选择: auto / deepseek / doubao / none
     llm_provider: str = "auto"
-    llm_timeout: float = 60.0
+    llm_timeout: float = 120.0
+    # 抽取任务关闭"思考"可大幅提速降本（实测 67s→1.7s）；
+    # 若用的是非推理模型可保持 disabled，模型不支持时会自动去掉该参数重试
+    llm_thinking: str = "disabled"
     llm_max_images: int = 2          # 单条房源最多分析几张图（控制成本）
 
     # DeepSeek（文本，OpenAI 兼容）

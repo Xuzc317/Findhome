@@ -110,9 +110,15 @@ class LLMClient:
         self.timeout = timeout or settings.llm_timeout or 60.0
         self.max_images = settings.llm_max_images or 2
         self.vision_enabled = bool(settings.llm_vision_enabled)
+        # 抽取任务不需要长思考。实测豆包 2.1 这类推理模型在默认（带思考）下
+        # 单次 67 秒 / 约 3900 tokens，关闭思考后 1.7 秒 / 25 tokens，
+        # 抽取结果一致，因此默认关闭。
+        self.thinking = (settings.llm_thinking or "disabled").lower()
         self.calls = 0
         self.last_error: Optional[str] = None
         self._client = httpx.Client(timeout=self.timeout)
+        # 记录不支持 thinking 参数的供应商，避免每次多试一次
+        self._thinking_unsupported: set = set()
 
     # ---------- 可用性 ----------
 
@@ -160,8 +166,44 @@ class LLMClient:
             return f"{self.deepseek_base}/chat/completions", self.deepseek_key, self.deepseek_model
         return f"{self.doubao_base}/chat/completions", self.doubao_key, self.doubao_model
 
+    @property
+    def _fallback_provider(self) -> Optional[str]:
+        """备用供应商（当前不可用时返回 None）"""
+        active = self.provider
+        deepseek_ok = is_configured(self.deepseek_key)
+        doubao_ok = is_configured(self.doubao_key) and is_configured(self.doubao_model)
+        if active == "doubao" and deepseek_ok:
+            return "deepseek"
+        if active == "deepseek" and doubao_ok:
+            return "doubao"
+        return None
+
     def chat(self, messages: List[dict], provider: Optional[str] = None,
-             temperature: float = 0.0, max_tokens: int = 800) -> Optional[LLMResponse]:
+             temperature: float = 0.0, max_tokens: int = 800,
+             allow_fallback: bool = True) -> Optional[LLMResponse]:
+        """调用大模型；主供应商失败时自动切换到另一家（仅 auto 模式下）"""
+        result = self._chat_once(messages, provider=provider,
+                                 temperature=temperature, max_tokens=max_tokens)
+        if result is not None:
+            return result
+
+        # 兜底：只在"自动选择"且另一家可用时切换，避免用户指定了却偷偷换人
+        if allow_fallback and (provider is None) and self.requested_provider == "auto":
+            fallback = self._fallback_provider
+            if fallback:
+                primary_error = self.last_error
+                result = self._chat_once(messages, provider=fallback,
+                                         temperature=temperature,
+                                         max_tokens=max_tokens)
+                if result is not None:
+                    self.last_error = None
+                    return result
+                self.last_error = f"主({provider or 'primary'}): {primary_error} | 备({fallback}): {self.last_error}"
+        return None
+
+    def _chat_once(self, messages: List[dict], provider: Optional[str] = None,
+                   temperature: float = 0.0,
+                   max_tokens: int = 800) -> Optional[LLMResponse]:
         provider = provider or self.provider
         if provider is None:
             self.last_error = "未配置任何可用的大模型 Key"
@@ -179,12 +221,24 @@ class LLMClient:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        # 关闭思考：推理模型在抽取任务上会白烧几十秒与上千 tokens
+        if self.thinking == "disabled" and provider not in self._thinking_unsupported:
+            payload["thinking"] = {"type": "disabled"}
+
         headers = {"Authorization": f"Bearer {key}",
                    "Content-Type": "application/json"}
 
         self.calls += 1
         try:
             response = self._client.post(url, json=payload, headers=headers)
+            if response.status_code != 200 and "thinking" in payload:
+                # 该模型不支持 thinking 参数 → 去掉后重试一次，并记住
+                message = response.text[:200]
+                if any(k in message for k in ("thinking", "invalid", "Invalid",
+                                              "unknown", "Unknown", "unsupported")):
+                    self._thinking_unsupported.add(provider)
+                    payload.pop("thinking", None)
+                    response = self._client.post(url, json=payload, headers=headers)
             if response.status_code != 200:
                 self.last_error = (f"{provider} HTTP {response.status_code}: "
                                    f"{response.text[:180]}")

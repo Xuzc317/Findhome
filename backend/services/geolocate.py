@@ -88,6 +88,26 @@ def normalize_line_name(text: str) -> str:
     return text
 
 
+def normalize_station_name(value: str) -> str:
+    """把大模型/正文里抽到的站名规整成"XX站"
+
+    模型常返回 "5号线坂田站" 这种带线路前缀的结果，直接拿去 POI 搜索会命中不到，
+    这里统一抹掉线路前缀，并补上结尾的"站"。
+    """
+    if not value:
+        return ""
+    name = value.strip()
+    # 先去掉所有括号内容（"(8号线)"、"（地铁）" 之类）
+    name = re.sub(r"[（(][^）)]*[)）]", "", name)
+    name = re.sub(r"^\s*(?:地铁)?\s*\d{1,2}\s*号线\s*", "", name)
+    name = re.sub(r"^\s*(?:地铁)?\s*[一二三四五六七八九十]{1,2}\s*号线\s*", "", name)
+    name = re.sub(r"^\s*地铁\s*", "", name)
+    name = name.strip("·-— ")
+    if name and not name.endswith("站"):
+        name = f"{name}站"
+    return name
+
+
 def extract_candidates(house: House, max_candidates: int = 4) -> List[LocationCandidate]:
     """从房源字段与文本中抽取地点候选，按可信度排序"""
     title = house.title or ""
@@ -256,7 +276,12 @@ def locate_house(db: Session, house: House, amap: AmapClient,
                                 ("station", "station", 50)):
             value = (extra.get(key) or "").strip() if isinstance(extra, dict) else ""
             if value:
-                name = f"{value}站" if kind == "station" and not value.endswith("站") else value
+                if kind == "station":
+                    name = normalize_station_name(value)
+                else:
+                    name = value
+                if not name:
+                    continue
                 candidates.append(LocationCandidate(
                     query=name, kind=kind, confidence=conf,
                     evidence=f"大模型抽取({key}): {value}",
