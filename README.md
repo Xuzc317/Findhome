@@ -1,8 +1,9 @@
 # Findhome
 
 **按地铁站找房，而不是按行政区翻房。**
-输入城市 + 地铁站 + 预算 + 房型 → 到闲鱼/小红书/豆瓣**按需采集** → 计算**真实步行距离** → 图文卡片呈现，
-并标出转租、疑似中介与可能为宣传图的房源。
+
+输入城市 + 地铁站 + 预算 + 房型 → 到闲鱼 / 小红书 / 豆瓣**按需采集**
+→ 计算**真实步行距离** → 图文卡片呈现，并标出转租、疑似中介与可能为宣传图的房源。
 
 > 全部数据只存在你自己电脑上。不绕过验证码、不逆向平台签名、不使用他人账号。
 
@@ -404,150 +405,6 @@ Findhome/
 | GET | `/api/geo/stats` | 定位覆盖率 |
 
 完整文档：<http://localhost:8000/docs>
-
-</details>
-
----
-
-<details>
-<summary><b>🌏 English（点开）</b></summary>
-
-<br>
-
-# Findhome
-
-**Find a flat by metro station, not by district.**
-City + stations + budget + layout → on-demand collection from Xianyu / Xiaohongshu /
-Douban → **real walking distances** → image cards, with sublets, suspected agencies and
-likely promotional photos flagged.
-
-> Everything stays on your own machine. No CAPTCHA bypass, no signature
-> reverse-engineering, no use of anyone else's account.
-
-<h2 align="center">⭐ Built on top of an open-source project</h2>
-
-<h1 align="center"><a href="https://github.com/liguobao/HouseSearch">liguobao / HouseSearch</a></h1>
-
-<h3 align="center">Thanks to the original author and all contributors 🙏<br/>Findhome would not exist without it</h3>
-
-<br>
-
-### A note from the author
-
-This project is **a learning exercise and an experiment in working with AI** — not a
-commercial product, not something I charge for, and not something I promise to maintain.
-
-I built it for a simple reason: I had very specific requirements (near these metro
-stations, under 20 minutes on foot, whole flat only, nothing too old), and existing tools
-either hard-code their filters or want money. So I took an open-source project I liked and
-reshaped it to serve me.
-
-What surprised me was not the code but **how fast an idea could become real** — the gap
-between "I want a tool that filters flats by metro station" and "it runs, and others can
-use it" was far shorter than I expected.
-
-So if you are wondering whether your idea is worth building: **it is. Build it first.**
-This repo is a sample showing that an ordinary person, with AI, can ship an idea.
-
-Which is also why **this project is for learning**. Please keep collection rates low,
-respect platform rules, and don't use it for resale or commercial redistribution.
-The upstream licence (LGPL v3) still applies.
-
-### AI collaboration
-
-| Stage | Handled by |
-|---|---|
-| Task planning, requirement breakdown, **usage-boundary statements**, acceptance criteria | **WorkBuddy AI**, **ChatGPT** |
-| Implementation, tests, debugging, commits and pushes | **DeepSeek Harness** |
-
-The AI made mistakes along the way, all recorded in the commit history (misreading
-"no elevator" as having one, mistaking lazy-load placeholders for listing photos,
-computing a test expectation incorrectly). Those corrections are part of the repo.
-
-### Who it is for
-
-- **People who work with AI coding tools** (Codex, Claude Code, DeepSeek Harness…) —
-  usable as a reference for reshaping an open-source project
-- **Traditional programmers** — a conventional stack (FastAPI + React + SQLite)
-- **Flat-hunters with a specific commute in mind** who want control over the filters
-
-### Goals
-
-1. **Search and filter rental listings** — turning "station + walking time + budget + layout" into one query
-2. **Learn how to build a real project with AI** — including the parts that went wrong
-
-### Features
-
-| Feature | Description |
-|---|---|
-| 🚇 **Search by metro station** | Pick a line, stations expand automatically; multiple stations supported |
-| 🚶 **Real walking distance** | AMap walking-route planning, not straight-line estimation |
-| 🔑 **Sublet detection** | Sublet / direct-from-owner / normal |
-| 🏢 **Agency flagging** | Poster ID extracted from image URLs; bulk posters flagged |
-| 🖼 **Image honesty notice** | Photos are poster-uploaded and may be promotional |
-| ⭐ **Favourites & notes** | Stored independently of collected data |
-| 📍 **Location precision tiers** | Station-only listings are listed separately — never a faked 0 m |
-| ⏱ **On-demand collection** | Only runs when you press Start — not a 24/7 crawler |
-
-### Screenshots
-
-![Choose city](docs/screenshots/01-choose-city.png)
-
-![Platform auth](docs/screenshots/02-auth-status.png)
-
-![Conditions](docs/screenshots/03-conditions.png)
-
-![Results](docs/screenshots/04-results-cards.png)
-
-![Favourites](docs/screenshots/05-favorites.png)
-
-![Settings](docs/screenshots/06-settings.png)
-
-> Listing photos blurred; text readable. No browser chrome captured.
-
-### Quick start
-
-```bash
-git clone https://github.com/Xuzc317/Findhome.git && cd Findhome
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cd frontend && npm install && npm run build && cd ..
-cp .env.example .env          # set AMAP_WEB_KEY at minimum
-uvicorn backend.main:app --host 0.0.0.0 --port 8000   # run from the project root
-```
-
-Open <http://localhost:8000>. See the Chinese tutorial above for details
-(collapsible sections), plus:
-
-- **Two AMap key types are not interchangeable** — a JS key used as `AMAP_WEB_KEY`
-  returns `10009`. Get keys at <https://console.amap.com/dev/key/app>
-- **Platform login**: `python browser_daemon.py` opens a browser for QR login;
-  `python export_cookies.py` writes the session to `.env` (masked output).
-  No passwords are requested and no CAPTCHAs are handled.
-- **Custom criteria**: use the UI, save a search, edit `data/profiles/<name>.json`,
-  or call `POST /api/search`.
-
-### Architecture
-
-Frontend: React 18 + TypeScript + Vite 5 + Ant Design 5 (five own pages).
-Backend: FastAPI + SQLAlchemy 2 + SQLite. Collection adapters: HTTP for Douban/Beike,
-real browser for Xianyu/Xiaohongshu (their search APIs require page-generated
-signatures, which this project does not reverse-engineer).
-Geo: AMap Web Service + static metro data (GCJ-02). LLM: DeepSeek / Doubao.
-
-### Known limitations
-
-1. **Platform anti-bot measures are the main uncertainty** — wait for cooldowns; no CAPTCHA solving, no signature reverse-engineering
-2. **Beike dropped** — its automated-access checks are too strict to handle without bypassing access controls
-3. **Xiaohongshu note pages restricted** — search works, detail pages do not, so most listings stay "location unconfirmed"
-4. **Photos cannot be verified** — only the poster type is labelled
-5. **No guessed timestamps** — collection time is never presented as publish time
-6. **Conservative rent parsing** — unknown rather than a misread phone number
-7. **SQLite concurrency** — fine for single-user local use
-
-### Licence
-
-**LGPL v3**, same as upstream. See [LICENSE](LICENSE).
 
 </details>
 
