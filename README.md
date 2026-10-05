@@ -1,6 +1,6 @@
 # Findhome
 
-**本地租房聚合与通勤筛选工具** — 按「城市 + 地铁站 + 预算 + 房型」到多平台实时采集房源，
+**本地租房聚合与通勤筛选工具** — 按「城市 + 地铁站 + 预算 + 房型」到多平台按需采集房源，
 计算**真实步行距离**，并识别转租、机构批量发布者与可能为宣传图的房源。
 
 **A local rental aggregator with commute-based filtering** — pick a city, some metro
@@ -8,12 +8,97 @@ stations, a budget and a layout; it collects listings from multiple platforms on
 computes **real walking distances**, and flags sublets, bulk-posting agencies and likely
 promotional photos.
 
-[中文](#中文) · [English](#english) · [部署](#部署到本地) · [自定义条件](#加入你自己的要求条件)
+[作者的话](#作者的话) · [与原项目对比](#与原项目-housesearch-的对比) · [中文文档](#中文) · [English](#english) · [Author's note](#authors-note)
 
 > ⚠️ **仅供个人本地使用 / For personal, local use only.**
 > 不绕过任何验证码、登录或访问控制，不逆向平台签名算法，不使用他人账号。
 > This project does **not** bypass CAPTCHAs, logins or access controls, does **not**
 > reverse-engineer platform signing algorithms, and never uses anyone else's account.
+
+---
+
+<a id="作者的话"></a>
+## 作者的话 / A note from the author
+
+> 这一节是我自己写的，不是模板。想先说清楚「为什么要有这个项目」。
+
+### 为什么要基于原项目改，而不是直接用
+
+市面上的租房工具要么是平台自带的（筛选维度由平台决定），要么是别人做好的成品
+（条件写死、不能改）。我有几个很具体的顾虑，最终决定自己动手：
+
+**1. 担心小程序要付费。**
+原项目的形态是小程序 + 服务端。对我来说，一个只是帮自己筛房源的工具，
+不应该先考虑「要不要为它付费」这件事——它应该跑在我自己的电脑上。
+
+**2. 我有自己的住房要求，不想被笼统的条件框住。**
+原项目的筛选是通用的租房条件（城市、价格、区域……）。但真实的找房逻辑是
+**「我在这几个地铁站附近找，步行不超过 20 分钟，预算这么多，只要整租，
+别太旧」**——这种「按通勤条件反查」的搜索，现成工具基本都不支持。
+更重要的是，需求是会变的：今天想加一个筛选维度，明天想多接一个渠道，
+**我必须能随时自己改**。
+
+**3. 原项目是 24 小时不间断爬虫，特别容易被检测到并封号。**
+这是最实际的问题。持续高频请求几乎必然触发风控。所以我把它改成了
+**按需采集**：你点「开始」，它才去采一次，采完就停。
+既降低被识别的概率，也更符合「我一天只看一次房」的真实使用节奏。
+
+**顺带一句给后续开发者的建议**：动手之前，先让手上的 AI / agent 工具去核实
+一遍相关 API 的**最新**接入要求（高德地图、小红书、闲鱼等），
+确认有没有新增限制、字段变更或资质要求，再按新条件改。
+这类平台规则变化很快，用旧资料写出来的代码往往跑不通。
+
+**4. 部署到本地，就不用担心个人数据与授权问题。**
+所有数据只落在你自己电脑上的 `data/houses.db`，不上传任何服务器。
+登录态也只使用**你本人浏览器**的会话，不索取密码、不做验证码绕过。
+
+**5. 把想法通过 AI 变成能用的项目，这件事本身很有意义。**
+从「我想要一个能按地铁站筛房的工具」，到真的有一个能跑起来、
+能服务自己、还能开源给别人用的东西——这个把想法落地的过程，
+我觉得值得记录，也值得分享。
+
+### 与原项目 HouseSearch 的对比
+
+先把原项目的自我描述原样放在这里（摘自
+[liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 的 README）：
+
+> 爬虫全天不间断获取公开租房信息，汇总处理分析后落地到数据库中。
+>
+> 使用高德地图 API 直接在地图上展示房源位置，方便查看租房地理位置，
+> 同时提供住址到公司的路线计算（公交 + 地铁 or 步行导航）以及预估耗时。
+>
+> 通过实时爬虫获取公开租房信息，直接在高德地图上直观展示房源位置 + 基础信息，
+> 同时提供住址到公司的路线计算（公交 + 地图 or 步行导航）。
+> 已实现【豆瓣租房小组】、【Zuber 合租】、【蘑菇租房】、【小红书】、
+> 【贝壳租房】、【房天下】、【上海互助租房】等房源信息数据爬取，
+> 部分房源价格支持筛选功能。
+>
+> 支持个人收藏房源信息，以便筛选自己合适的房子。
+
+**本项目保留了它的核心思路**——多平台采集公开租房信息、高德地图能力、
+收藏机制；**在形态与筛选方式上做了实质改动**：
+
+| 维度 | 原项目 HouseSearch | 本项目 Findhome |
+|---|---|---|
+| 形态 | 小程序 + 服务端 | **纯本地单体应用**（浏览器打开 `localhost`） |
+| 技术栈 | .NET Core + Vue + MySQL + Redis + MongoDB + ES | FastAPI + SQLAlchemy + **SQLite** + React + Ant Design |
+| 采集节奏 | **24 小时不间断爬虫** | **按需采集**：你点「开始」才去采，采完即停 |
+| 数据落地 | 服务端数据库，面向所有用户 | **只落本地** `data/houses.db`，不上传 |
+| 核心筛选 | 通用租房条件（城市/价格/区域…），部分房源支持价格筛选 | **按通勤条件反查**：地铁站 + **真实步行距离** + 房型 + 租型 + 发布者身份 |
+| 距离 | 高德地图展示 + 住址到公司路线计算 | 保留高德能力，重心是**房源到地铁站的真实步行路径** |
+| 房源定位 | — | 位置推断 + **精度分级**（楼栋级/小区级/仅站点附近），不伪造坐标 |
+| 收藏 | 支持个人收藏 | 收藏 / 已联系 / 不感兴趣 / **备注**，独立于采集数据持久化 |
+| 账号 | 小程序账号体系 | **无账号体系**，只用你本人浏览器会话 |
+| 数据源 | 豆瓣、Zuber 合租、蘑菇租房、小红书、贝壳、房天下、上海互助租房 | 闲鱼、小红书、豆瓣（**贝壳因风控放弃**，原因见下） |
+| 使用成本 | 小程序可能涉及付费 | 完全免费，本地运行 |
+
+**需要说明的两点差异**：
+
+- 原项目列出的数据源里，蘑菇租房等平台已停止运营，贝壳目前对自动化访问的
+  校验也过于严格。所以本项目实际可用的是**闲鱼、小红书、豆瓣**三个源，
+  这一点在文档里如实标注，不假装支持。
+- 原项目面向多用户服务，本项目面向**你自己的找房过程**——所以它更像一个
+  「筛房工作台」：有进度反馈、有收藏备注、有保存的搜索。
 
 ---
 
@@ -329,14 +414,20 @@ python check_secrets.py --fast    # 跳过历史扫描，秒级
 ### 数据来源与致谢
 
 本项目**基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch)
-修改而来**，在此向上游作者与贡献者致谢。
+修改而来**，在此向上游作者与贡献者致谢。原项目技术栈为
+.NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch。
 
-原项目技术栈：.NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch。
+详细的「继承了什么 / 改动了什么」见前文
+[与原项目 HouseSearch 的对比](#与原项目-housesearch-的对比)。
+简要来说：
 
 - **继承自上游**：项目骨架与部分前端结构、数据源 Adapter 的整体思路、LGPL v3 许可
 - **本项目重写或新增**：匹配引擎（按通勤条件反查）、地铁数据与真实步行距离、
-  位置推断与精度分级、条件识别（转租/中介/电梯/新旧）、任务化采集、
+  位置推断与精度分级、条件识别（转租/中介/电梯/新旧）、**按需采集**、
   统一配置层、收藏与备注持久化，以及当前这套界面
+
+如果这个项目对你有帮助，也请给[上游项目](https://github.com/liguobao/HouseSearch)
+点一个 star —— 没有它就没有这个项目。
 
 ### License
 
@@ -348,6 +439,91 @@ python check_secrets.py --fast    # 跳过历史扫描，秒级
 
 <a id="english"></a>
 ## English
+
+<a id="authors-note"></a>
+### A note from the author
+
+> This section is written by me, not from a template — it explains *why* this project exists.
+
+**1. I was worried the mini-program would cost money.**
+The upstream project is a mini-program plus a server. For a tool whose only job is to
+help me filter listings, the first question shouldn't be "how much does it cost" —
+it should run on my own machine.
+
+**2. I have my own requirements, and I don't want to be boxed in by generic filters.**
+The upstream filters are generic (city, price, district…). But real flat-hunting looks
+like this: *"I'm looking near **these** metro stations, under 20 minutes on foot, this
+budget, whole flat only, nothing too old."* Almost no existing tool supports searching
+**by commute conditions**. And requirements change — I need to be able to add a filter
+dimension today and plug in another source tomorrow, **by myself**.
+
+**3. The upstream project runs a 24/7 crawler, which is very easy to detect and gets accounts banned.**
+This was the most practical problem. Continuous high-frequency requests will almost
+certainly trigger anti-bot measures. So I changed it to **on-demand collection**: it only
+goes out when you press *Start*, and stops when done. Lower detection risk, and it fits
+how people actually flat-hunt — once a day, not every second.
+
+**A tip for future developers**: before you start, have your AI / agent tool verify the
+**latest** integration requirements of the relevant APIs (AMap, Xiaohongshu, Xianyu,
+etc.) — new restrictions, changed fields, new qualification rules — and adapt to them.
+These platforms change quickly, and code written against stale documentation simply
+won't run.
+
+**4. Deploying locally removes any personal-data or authorisation concerns.**
+Everything lands in `data/houses.db` on your own machine; nothing is uploaded.
+Sessions use **your own browser login only** — no passwords are ever requested and no
+CAPTCHA is ever bypassed.
+
+**5. Turning an idea into a working project through AI is meaningful in itself.**
+From "I want a tool that can filter flats by metro station" to something that actually
+runs, serves me, and can be open-sourced for others — that process is worth recording
+and worth sharing.
+
+### Comparison with the upstream HouseSearch
+
+Here is the upstream project's own description, quoted verbatim from
+[liguobao/HouseSearch](https://github.com/liguobao/HouseSearch):
+
+> A crawler continuously collects public rental listings around the clock, aggregates
+> and analyses them, and stores the results in a database.
+>
+> The AMap API is used to show listings directly on a map, making their location easy to
+> inspect, and to compute the route from home to the office (transit + metro, or walking)
+> together with an estimated travel time.
+>
+> Listings from Douban rental groups, Zuber shared housing, Mogu, Xiaohongshu, Beike,
+> Fang.com and Shanghai mutual-aid rental groups are already supported, with price
+> filtering available for some of them. Personal favourites are supported so you can
+> shortlist suitable places.
+
+**This project keeps the core idea** — multi-platform collection of public listings,
+AMap integration, and a favourites mechanism — **while changing the form factor and the
+way filtering works**:
+
+| Aspect | Upstream HouseSearch | This project (Findhome) |
+|---|---|---|
+| Form | Mini-program + server | **Purely local single app** (open `localhost` in a browser) |
+| Stack | .NET Core + Vue + MySQL + Redis + MongoDB + ES | FastAPI + SQLAlchemy + **SQLite** + React + Ant Design |
+| Collection cadence | **24/7 continuous crawler** | **On demand** — only when you press *Start*, then it stops |
+| Data location | Server database, shared by all users | **Local only** — `data/houses.db`, never uploaded |
+| Core filtering | Generic criteria (city / price / district…), price filtering for some listings | **Commute-first**: metro station + **real walking distance** + layout + rent type + poster identity |
+| Distance | Map display + home-to-office routing | AMap kept, but the focus is the **real walking route from the listing to the station** |
+| Geocoding | — | Location inference with **precision tiers** (building / community / station-only); coordinates are never faked |
+| Favourites | Personal favourites | Favourite / contacted / not-interested / **notes**, persisted independently of collected data |
+| Accounts | Mini-program account system | **No account system** — your own browser session only |
+| Sources | Douban, Zuber, Mogu, Xiaohongshu, Beike, Fang.com, Shanghai mutual-aid | Xianyu, Xiaohongshu, Douban (**Beike dropped** for anti-bot reasons, see below) |
+| Cost | Mini-program may involve payment | Completely free, runs locally |
+
+**Two differences worth spelling out:**
+
+- Some sources listed upstream (Mogu, for instance) no longer operate, and Beike's
+  automated-access checks are currently too strict. So the working sources here are
+  **Xianyu, Xiaohongshu and Douban** — stated plainly rather than pretending otherwise.
+- Upstream serves many users; this project serves **your own flat-hunting process**. It
+  is therefore closer to a "flat-filtering workbench": progress feedback, favourites and
+  notes, saved searches.
+
+---
 
 ### The problem
 
@@ -658,15 +834,21 @@ python check_secrets.py           # keys / cookies / .env must not enter Git
 
 This project is **based on the open-source project
 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch)**. Thanks to the original
-author and contributors.
+author and contributors. Original stack: .NET Core + Vue.js + MySQL + Redis + MongoDB +
+Elasticsearch.
 
-Original stack: .NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch.
+See [Comparison with the upstream HouseSearch](#comparison-with-the-upstream-housesearch)
+above for the full "what was inherited vs. what changed" breakdown. In short:
 
 - **Inherited**: project skeleton and parts of the frontend structure, the data-source
   adapter concept, and the LGPL v3 licence
 - **Rewritten / added here**: the matching engine (commute-first search), metro data and
   real walking distances, location inference with precision tiers, condition detection
-  (sublet / agency / elevator / freshness), taskified collection, the centralised
+  (sublet / agency / elevator / freshness), **on-demand collection**, the centralised
   configuration layer, favourites & notes persistence, and the current UI
+
+If this project is useful to you, please also star the
+[upstream project](https://github.com/liguobao/HouseSearch) — this wouldn't exist
+without it.
 
 Released under **LGPL v3**, same as upstream. See [LICENSE](LICENSE).
