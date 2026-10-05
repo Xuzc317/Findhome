@@ -95,7 +95,7 @@ export default function SearchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ② 换城市 → 重新加载该城市的线路与站点
+  // ② 换城市 → 重新加载该城市的线路
   useEffect(() => {
     if (!criteria.city) return;
     setLines([]);
@@ -103,12 +103,50 @@ export default function SearchPage() {
     metroService.getLines(criteria.city).then((res: any) => {
       setLines(res?.data || []);
     });
-    metroService.getStations(criteria.city).then((res: any) => {
-      const list = (res?.data || []).map((s: any) => s.name);
-      setStations(Array.from(new Set(list)) as string[]);
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [criteria.city]);
+
+  // ③ 站点列表随所选线路联动
+  //    选了线路就只列出该线路上的站——早先无论选哪条线都返回全市站点，
+  //    导致用户能选到线路之外的站，与"按线路选站"的预期不符。
+  useEffect(() => {
+    if (!criteria.city) return;
+    const selected = criteria.line_names;
+    let cancelled = false;
+
+    const load = async () => {
+      if (!selected.length) {
+        const res: any = await metroService.getStations(criteria.city);
+        if (!cancelled) {
+          setStations(
+            Array.from(new Set((res?.data || []).map((s: any) => s.name))) as string[]
+          );
+        }
+        return;
+      }
+      const results = await Promise.all(
+        selected.map((line) => metroService.getStations(criteria.city, line))
+      );
+      if (cancelled) return;
+      const names = new Set<string>();
+      results.forEach((res: any) =>
+        (res?.data || []).forEach((s: any) => names.add(s.name))
+      );
+      const allowed = Array.from(names);
+      setStations(allowed);
+      // 已选站点里不在新范围内的，自动移除（否则会留下无法解释的"幽灵"站点）
+      setCriteria((c) => {
+        const kept = c.stations.filter((s) => names.has(s));
+        return kept.length === c.stations.length ? c : { ...c, stations: kept };
+      });
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [criteria.city, criteria.line_names.join(",")]);
 
   const runSearch = async () => {
     if (!criteria.stations.length && !criteria.line_names.length) {
@@ -211,7 +249,7 @@ export default function SearchPage() {
             </Col>
             <Col xs={24} md={16}>
               <div style={{ fontSize: 13, color: "#8c8c8c", marginBottom: 4 }}>
-                ② 按地铁线路快速选站（可多选；也可直接在下一行挑站）
+                ② 按地铁线路快速选站（可多选；选了线路后，下方站点列表只保留该线路上的站）
               </div>
               <Select
                 mode="multiple"
@@ -231,7 +269,10 @@ export default function SearchPage() {
 
           {/* ② 站点 */}
           <div style={{ fontSize: 13, color: "#8c8c8c", marginBottom: 4 }}>
-            地铁站（{criteria.stations.length} 个已选，留空则用线路包含的全部站点）
+            地铁站（{criteria.stations.length} 个已选
+            {criteria.line_names.length
+              ? `；当前只列出 ${criteria.line_names.join("、")} 上的 ${stations.length} 个站`
+              : `；留空则用全部 ${stations.length} 个站`}）
           </div>
           <Select
             mode="multiple"
