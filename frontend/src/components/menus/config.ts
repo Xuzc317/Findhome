@@ -5,7 +5,7 @@ export const MENUS_LIST = [{
   icon: "/images/home.png",
 },
 {
-  title: "我的需求",
+  title: "保存的搜索",
   key: "match",
   path: "/match",
   icon: "/images/home.png",

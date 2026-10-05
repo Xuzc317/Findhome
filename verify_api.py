@@ -113,14 +113,29 @@ def main():
     base_total = base_body.get("total") or 0
     base_items = base_body.get("data") or []
 
-    # 排除关键词：排除后条数必须变化且不能清零（除非确实全部命中）
+    # 排除关键词
+    # 这里检验的是"契约"，不是精确条数：
+    #   ① 排除后**不能清零**——这是 NULL 三值逻辑那个 bug 的回归点
+    #      （`NULL LIKE '%x%'` 为 NULL，取反仍为 NULL，会把结果全部滤掉）
+    #   ② 排除后总数只能减少或不变，不可能增加
+    #   ③ 排除一个必然不存在的词，总数应完全不变
+    # 早先的写法拿"标题命中数"去推期望值，但过滤是按**全部文本列**匹配的，
+    # 正文里写"无中介费"的房源也会被算进去，导致期望值必然算错。
     if base_items:
         term = "中介"
-        hit = sum(1 for h in base_items if term in (h.get("title") or ""))
         after = safe_json(c.get("/v3/houses", params={"pageSize": 200, "keywordExclude": term})).get("total")
-        c.check("排除关键词生效（NULL 列不会清空结果）",
-                after is not None and (after == base_total - hit if hit else after == base_total),
-                f"命中 {hit} 条 → 排除后 {after}（排除前 {base_total}）")
+        c.check("排除关键词不会清空结果（NULL 三值逻辑回归）",
+                after is not None and after > 0,
+                f"排除「{term}」→ {after} 条（排除前 {base_total}）")
+        c.check("排除关键词使总数不增加",
+                after is not None and after <= base_total,
+                f"{after} ≤ {base_total}")
+        absent = "zzz_不存在的词_zzz"
+        after_absent = safe_json(c.get("/v3/houses",
+                                       params={"pageSize": 200, "keywordExclude": absent})).get("total")
+        c.check("排除不存在的词时总数不变",
+                after_absent == base_total,
+                f"{after_absent} == {base_total}")
 
         r = c.get("/v3/houses", params={"pageSize": 200, "intervalDay": 30})
         c.check("发布时间筛选生效（intervalDay）", isinstance(safe_json(r).get("total"), int),

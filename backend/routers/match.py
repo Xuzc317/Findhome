@@ -42,9 +42,17 @@ async def save_profile(request: ProfileSaveRequest = Body(...)):
         price_min=request.price_min,
         price_max=request.price_max,
         layouts=request.layouts,
+        rent_types=request.rent_types,
+        exclude_shared=request.exclude_shared,
         require_elevator=request.require_elevator,
+        require_precise_location=request.require_precise_location,
         min_newness_score=request.min_newness_score,
         avoid_old_small=request.avoid_old_small,
+        sources=request.sources,
+        listing_kinds=request.listing_kinds,
+        poster_types=request.poster_types,
+        exclude_agency=request.exclude_agency,
+        sort_by=request.sort_by,
         notes=request.notes,
     )
     path = profile.save()

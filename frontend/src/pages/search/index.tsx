@@ -3,11 +3,13 @@ import {
   Alert,
   Badge,
   Button,
+  Modal,
   Card,
   Checkbox,
   Col,
   Divider,
   Empty,
+  Input,
   InputNumber,
   Row,
   Segmented,
@@ -30,6 +32,9 @@ import {
   searchService,
 } from "@/services/search";
 import { MetroService } from "@/services/metro";
+import { MatchService } from "@/services/match";
+
+const matchService = new MatchService();
 
 const metroService = new MetroService();
 
@@ -73,6 +78,9 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"precise" | "pending">("precise");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const patch = (p: Partial<SearchCriteria>) => setCriteria((c) => ({ ...c, ...p }));
 
@@ -171,6 +179,14 @@ export default function SearchPage() {
                 }
               >
                 清空条件
+              </Button>
+              <Button
+                onClick={() => {
+                  setSaveName(`${criteria.city}-${criteria.stations.slice(0, 3).join("") || criteria.line_names.join("") || "全部"}`);
+                  setSaveOpen(true);
+                }}
+              >
+                保存为常用搜索
               </Button>
               <Button type="primary" loading={loading} onClick={runSearch}>
                 搜索
@@ -549,6 +565,41 @@ export default function SearchPage() {
             description="选好城市与地铁站后点「搜索」"
           />
         )}
+        <Modal
+          title="保存为常用搜索"
+          open={saveOpen}
+          confirmLoading={saving}
+          onCancel={() => setSaveOpen(false)}
+          onOk={async () => {
+            if (!saveName.trim()) {
+              message.warning("请填写名称");
+              return;
+            }
+            setSaving(true);
+            try {
+              await matchService.saveProfile({
+                name: saveName.trim(),
+                ...criteria,
+              } as any);
+              message.success("已保存，可在「我的需求」页一键调用");
+              setSaveOpen(false);
+            } catch (e: any) {
+              message.error(e?.message || "保存失败");
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <p style={{ color: "#8c8c8c", fontSize: 13 }}>
+            当前条件（城市、站点、预算、房型、步行上限、房源性质、数据源、排序）会完整保存，
+            下次在「我的需求」页直接查看结果，不用重填。
+          </p>
+          <Input
+            placeholder="例如：龙华通勤-转租"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+          />
+        </Modal>
       </div>
     </BaseLayout>
   );

@@ -94,6 +94,10 @@ export class MatchService extends BaseService {
     return res?.data || [];
   }
 
+  async saveProfile(criteria: Record<string, unknown>): Promise<void> {
+    await this.post<any>("/match/profiles", criteria);
+  }
+
   async run(profileName: string, walk = true): Promise<MatchResult> {
     // 后端 /match 直接返回结果对象（含 code/数据/统计），不是标准信封，
     // 所以这里按 any 接收后断言，避免 BaseService 的 ApiResponse 泛型不匹配。

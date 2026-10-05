@@ -270,16 +270,30 @@ class StationDistanceReport(BaseModel):
 # ==================== 需求匹配 ====================
 
 class ProfileSaveRequest(BaseModel):
-    """保存"我的通勤选址条件" """
+    """保存的搜索：把当前搜索条件存成档案，下次一键调用
+
+    字段与 POST /api/search 对齐，保证"存下来的条件"能原样还原——
+    早先只存了部分字段，导致保存后再打开会丢筛选条件。
+    """
     name: str
     city: str = "深圳"
     stations: List[str] = []
+    line_names: List[str] = []
     max_straight_m: int = 1000
     max_walk_minutes: int = 20
     price_min: Optional[int] = None
     price_max: Optional[int] = None
-    layouts: List[str] = []          # studio / 1b1l / 2b1l / 3b1l / 4b+
+    layouts: List[str] = []           # studio / 1b1l / 2b1l / 3b1l / 4b+
+    rent_types: List[int] = []        # 3整租 4公寓
+    exclude_shared: bool = True
     require_elevator: bool = False
+    require_precise_location: bool = True
     min_newness_score: Optional[int] = None
     avoid_old_small: bool = True
+    sources: List[str] = []           # xianyu/xiaohongshu/douban
+    listing_kinds: List[str] = []     # sublet/direct/normal
+    poster_types: List[str] = []      # individual/agency/unknown
+    exclude_agency: bool = False
+    sort_by: str = "walk"
     notes: str = ""
+

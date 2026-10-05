@@ -31,6 +31,9 @@ jobs:
       - name: 地铁/坐标/房型/定位离线测试（41 项，需 data/metro 静态数据）
         run: python tests/test_metro_geo.py
 
+      - name: 条件识别与需求匹配离线测试（25 项，内存库隔离）
+        run: python tests/test_match.py
+
       - name: 启动后端
         run: |
           python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
@@ -45,6 +48,9 @@ jobs:
 
       - name: 接口契约与筛选闭环自检（31 项）
         run: python verify_api.py --base http://127.0.0.1:8000/api
+
+      - name: 搜索接口与配置层自检（含"密钥不泄漏"硬性断言）
+        run: python verify_search.py --base http://127.0.0.1:8000/api
 
       - name: Cookie 导入工具自检（不应写入任何 Cookie）
         run: |
