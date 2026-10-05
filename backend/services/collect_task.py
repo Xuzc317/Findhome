@@ -185,7 +185,11 @@ async def _stage_collect(task: CollectTask, criteria: dict) -> dict:
                                 await asyncio.sleep(2.5)
             except Exception as e:
                 task.log(f"⚠️ 浏览器采集不可用：{type(e).__name__}: {str(e)[:60]}")
-                task.log("   提示：需要先运行 python browser_daemon.py 并完成登录")
+                if "playwright" in str(e).lower() or isinstance(e, ImportError):
+                    task.log("   原因：未安装 playwright（闲鱼/小红书采集必需）")
+                    task.log("   安装：pip install playwright && python -m playwright install chromium")
+                else:
+                    task.log("   提示：需要先运行 python browser_daemon.py 并完成登录")
 
         # 豆瓣走直连接口（登录后可用）
         if "douban" in sources:

@@ -116,7 +116,7 @@
 
 ### 环境要求
 
-Python 3.11+、Node.js 18+、（可选）Chromium 用于浏览器采集。
+Python 3.11+、Node.js 18+。浏览器内核由 playwright 自动下载（见下）。
 
 ### 1. 部署
 
@@ -129,12 +129,20 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
+# 浏览器内核（约 150MB，闲鱼 / 小红书采集必需，不装则这两个源不可用）
+python -m playwright install chromium
+
 # 前端
 cd frontend && npm install && npm run build && cd ..
 
 # 配置
 cp .env.example .env               # 至少填高德 Web 服务 Key
 ```
+
+> **为什么需要 playwright**：闲鱼和小红书的搜索接口要求页面 JS 生成的签名参数，
+> 本项目不做签名逆向，而是用真实浏览器打开搜索页、只读渲染结果。
+> 不用这两个源的话可以不装，但**装完 requirements.txt 后建议一并装上**，
+> 否则点「开始采集」时会提示浏览器采集不可用。
 
 ### 2. 启动
 

@@ -1,4 +1,4 @@
-# HouseSearch Local v1 - Python 依赖
+# Findhome - Python 依赖
 # 安装: pip install -r requirements.txt
 
 # Web 框架
@@ -13,10 +13,15 @@ sqlalchemy>=2.0.36
 pydantic>=2.9.2
 pydantic-settings>=2.6.0
 
-# 爬虫
+# 采集（HTTP 直连：豆瓣等）
 httpx>=0.27.2
 beautifulsoup4>=4.12.3
 lxml>=5.3.0
 
-# 可选：需要抓取 JS 渲染页面时再单独安装（体积较大，默认不装）
-# playwright>=1.48.0
+# 采集（真实浏览器：闲鱼 / 小红书）
+# 这两个平台的搜索接口要求页面 JS 生成的签名参数，本项目不做签名逆向，
+# 改用真实浏览器打开搜索页读取渲染结果，因此**必须**安装 playwright。
+#
+# 注意：pip 安装 playwright 后还需要单独下载浏览器内核（约 150MB）：
+#     python -m playwright install chromium
+playwright>=1.48.0
