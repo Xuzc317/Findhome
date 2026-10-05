@@ -219,10 +219,17 @@ def main():
             ("泄漏：" + "、".join(leaked)) if leaked else "全部未下发")
 
     # 逐字段再确认一遍（防止密钥以其他形式出现）
+    # 注意：空字符串是任何字符串的子串，所以未配置时必须跳过值比对，
+    # 否则 `"" not in json` 恒为 False，会在没有密钥的环境（如 CI）里误报。
     amap = data.get("amap", {})
+    amap_json = json.dumps(amap)
+    no_plain_key = "webServiceKey" not in amap
+    if is_configured(s.amap_web_key):
+        no_plain_key = no_plain_key and s.amap_web_key not in amap_json
     c.check("amap 不含 webServiceKey 明文",
-            "webServiceKey" not in amap and s.amap_web_key not in json.dumps(amap),
-            str([k for k in amap.keys()]))
+            no_plain_key,
+            str(list(amap.keys()))
+            + ("（未配置 Key，仅校验字段名）" if not is_configured(s.amap_web_key) else ""))
     c.check("llm 块不含任何 Key 字段",
             not any("key" in k.lower() and k.lower() != "provider"
                     for k in data.get("llm", {}).keys()),
