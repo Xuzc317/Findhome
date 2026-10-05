@@ -78,25 +78,36 @@
 
 ## 界面截图
 
-**实时采集向导**：选择城市 → 平台授权 → 筛选条件 → 采集结果
-
-![选择城市](docs/screenshots/01-choose-city.png)
-
-![平台授权](docs/screenshots/02-auth-status.png)
-
-![筛选条件](docs/screenshots/03-conditions.png)
-
 **采集结果**：图文卡片，含价格、步行时间、房型、电梯状态、发布者身份
 
 ![采集结果](docs/screenshots/04-results-cards.png)
 
-**收藏与记录**：`/favorites` —— 独立保存，采集覆盖房源时不丢
+<details>
+<summary><b>🖼 查看其余界面截图（点开）</b></summary>
+
+<br>
+
+**① 选择城市** —— 支持的城市与已采集房源数
+
+![选择城市](docs/screenshots/01-choose-city.png)
+
+**② 平台授权** —— 各平台登录态检查，未登录会明确提示
+
+![平台授权](docs/screenshots/02-auth-status.png)
+
+**③ 筛选条件** —— 按线路选站、预算、房型、步行时间、房源性质
+
+![筛选条件](docs/screenshots/03-conditions.png)
+
+**④ 收藏与记录**（`/favorites`）—— 独立保存，采集覆盖房源时不丢
 
 ![收藏与记录](docs/screenshots/05-favorites.png)
 
-**配置与集成**：`/settings` —— 密钥只显示掩码，服务端密钥不下发浏览器
+**⑤ 配置与集成**（`/settings`）—— 密钥只显示掩码，服务端密钥不下发浏览器
 
 ![配置与集成](docs/screenshots/06-settings.png)
+
+</details>
 
 > 截图中房源图片已打码，文字保持可读；不含浏览器边框，不携带本机信息。
 
