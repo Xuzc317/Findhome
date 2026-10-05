@@ -1,355 +1,672 @@
 # Findhome
 
-> 本地租房信息聚合、搜索、筛选系统 —— 帮你搜和筛，不替代你最终核验房源。
+**本地租房聚合与通勤筛选工具** — 按「城市 + 地铁站 + 预算 + 房型」到多平台实时采集房源，
+计算**真实步行距离**，并识别转租、机构批量发布者与可能为宣传图的房源。
 
-仓库：https://github.com/Xuzc317/Findhome
+**A local rental aggregator with commute-based filtering** — pick a city, some metro
+stations, a budget and a layout; it collects listings from multiple platforms on demand,
+computes **real walking distances**, and flags sublets, bulk-posting agencies and likely
+promotional photos.
 
-基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 改造（原项目前端 UI 与 LGPL v3 许可保留），专为个人本地使用设计。
+[中文](#中文) · [English](#english) · [部署](#部署到本地) · [自定义条件](#加入你自己的要求条件)
 
-## 项目定位
+> ⚠️ **仅供个人本地使用 / For personal, local use only.**
+> 不绕过任何验证码、登录或访问控制，不逆向平台签名算法，不使用他人账号。
+> This project does **not** bypass CAPTCHAs, logins or access controls, does **not**
+> reverse-engineer platform signing algorithms, and never uses anyone else's account.
 
-**不是**完美的开源产品，**而是**真正能用来找房的本地工具。
+---
 
-核心目标：从多个租房平台采集近期真实房源，汇总到本地数据库，提供统一的搜索、筛选、排序和地图展示能力。
+<a id="中文"></a>
+## 中文
 
-## 技术架构
+### 它解决什么问题
 
-| 层级 | 技术选型 | 说明 |
-|------|---------|------|
-| 前端 | React 18 + TypeScript + Vite + Ant Design | 复用原项目 newUI |
-| 后端 | Python + FastAPI | 轻量、现代、易维护 |
-| 数据库 | SQLite | 单文件、零配置、足够第一版使用 |
-| 爬虫 | Python + httpx + BeautifulSoup | 各平台独立 Adapter |
+找房时的真实流程不是「先翻房源再想通勤」，而是：
 
-## 当前验证状态（2026-10-04 实测）
+> 我在**这几个地铁站**附近找房，预算 **1200–2500**，要**单间 / 一房一厅**，
+> **步行不超过 20 分钟**，希望**有电梯、别太旧**。
 
-> 详细证据、失败原因与边界说明见 **[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)**。
-> 判断标准是"真实请求 + 真实解析"，不是 HTTP 200。
+主流平台都不支持这种「按通勤条件反查」的搜索，而且各有各的坑：宣传图、
+中介冒充房东、合租混在整租里、距离只给直线不给步行。
 
-| 平台 | 状态 | 需要登录 | 实测结果 |
-|------|------|---------|---------|
-| **豆瓣租房** | ✅ 可用（有风控） | 否 | 单页实采 **59 条**北京房源并入库；触发风控时如实上报 `blocked`，不静默返回 0 |
-| **贝壳找房** | ✅ 可用（有验证码风控） | 否（列表页） | 深圳列表页实采 **14 条**并入库（标题/价格/行政区/商圈/小区/标签/房源编号）；详情页验证码保护，**不抓取** |
-| 闲鱼 | 🔐 需登录 | 是 | 未登录返回 `RGV587_ERROR` 并跳转 passport 登录页；旧接口已下线 |
-| 小红书 | 🔐 需登录 | 是 | 搜索接口返回 `code=-101 无登录信息`；页面为客户端渲染且需签名头 |
+Findhome 把这条路走通：
 
-登录类平台**不要求密码**、不做验证码/签名逆向：只使用用户本人浏览器登录后的 Cookie（写入 `.env`，已被 git 忽略）。
+**先定地铁站 → 实时去各平台采 → 定位并计算真实步行距离 → 按条件筛选归类 → 图文卡片呈现**，
+并且把你自己的收藏与备注独立保存。
 
-## 筛选能力（前端 ↔ 后端闭环）
+### 功能
 
-| 维度 | 前端 | API 参数 |
-|------|------|---------|
-| 城市 / 数据源 | 筛选栏 | `city` / `source` |
-| 出租类型 | 筛选栏 | `rentType` |
-| 价格区间 | 筛选栏（最低-最高） | `fromPrice` / `toPrice` |
-| 发布时间 | 筛选栏（1/3/7/30 天） | `intervalDay` |
-| 关键词包含 | 顶部搜索框 | `keyword`（空格分隔多词，AND） |
-| 关键词排除 | 筛选栏 | `keywordExclude`（空格分隔多词） |
-| 风险 | 筛选栏（低中介嫌疑 / 可信度≥70） | `maxAgentScore` / `minConfidenceScore` |
-| 隐藏重复 | 默认开启 | `hide_duplicates` |
+| 功能 | 说明 |
+|---|---|
+| 🚇 **按地铁站选址** | 支持按线路选站（选「6号线」自动展开该线全部站点） |
+| 🚶 **真实步行距离** | 高德步行路径规划，不是直线折算；同时给出直线距离与步行时间 |
+| 🔑 **转租识别** | 区分「转租 / 直接房东 / 普通」。转租贴的图片与价格通常更真实 |
+| 🏢 **机构发布者标注** | 从图片 URL 提取发布者 ID；一个账号挂几十上百套的标为「疑似中介」 |
+| 🖼 **图片可信度提示** | 明确提示「房源图由发布者上传，可能是宣传图」，并对机构房源加注 |
+| 🏠 **房型与租型** | 单间 / 1房1厅 / 2房1厅…；默认排除合租 |
+| ⭐ **收藏与备注** | 收藏、已联系、不感兴趣、备注，**独立于采集数据长期保存** |
+| 📍 **位置精度分级** | 区分楼栋级 / 小区级 / 仅站点附近；只写「某站附近」的单独列出，不拿站点坐标冒充 0 米 |
+| 💾 **保存的搜索** | 把当前条件存成档案，下次一键调用 |
 
-**时间语义**：`publish_time` 是平台发布时间；贝壳列表页只展示"X天前维护"，
-因此单独存入 `last_active_time`，API 返回 `timeText` 明确区分（如 `2026-10-03(维护)`）。
-两者都没有时，前端显示"采集 + 日期"，不把采集时间冒充发布时间。
-时间筛选使用 `COALESCE(publish_time, last_active_time)`，两者皆空的房源不参与时间筛选。
+### 界面
 
-## 快速开始
+**① 选择城市** → **② 平台授权** → **③ 筛选条件** → **④ 采集结果**
 
-### 1. 环境准备
+![选择城市](docs/screenshots/01-choose-city.png)
 
-需要 Python 3.10+ 和 Node.js 18+
+![平台授权](docs/screenshots/02-auth-status.png)
+
+![筛选条件](docs/screenshots/03-conditions.png)
+
+结果以图文卡片呈现，含价格、步行时间、房型、电梯状态、新旧分、发布者身份：
+
+![采集结果](docs/screenshots/04-results-cards.png)
+
+> 截图中的**房源图片已打码**，文字保持可读；截图不含浏览器边框，因此不携带本机设备信息。
+
+收藏与备注独立保存，采集覆盖房源时不会丢失：
+
+![收藏与记录](docs/screenshots/05-favorites.png)
+
+所有集成（高德、大模型、各平台登录态）在一处可见，服务端密钥只显示掩码：
+
+![配置与集成](docs/screenshots/06-settings.png)
+
+### 技术结构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  前端  React 18 + TypeScript + Vite 5 + Ant Design 5        │
+│  ├─ /            实时采集向导（城市→授权→条件→结果）          │
+│  ├─ /favorites   收藏与记录（用户数据）                       │
+│  ├─ /search      快速查询（查本地已采数据，秒出）              │
+│  ├─ /saved       保存的搜索                                   │
+│  └─ /settings    配置与集成状态                               │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ REST  /api/*
+┌───────────────────────────▼─────────────────────────────────┐
+│  后端  FastAPI + SQLAlchemy 2 + SQLite                       │
+│                                                              │
+│  routers/    search  tasks  marks  metro  geo  houses …      │
+│  services/   match        匹配引擎（预筛→步行→条件→排序）      │
+│              collect_task 任务化采集（不阻塞 HTTP 请求）       │
+│              amap         高德客户端（3 QPS 节流 + 缓存）      │
+│              geolocate    位置推断（小区/地址/站点 → 坐标）    │
+│              condition    转租 / 中介 / 电梯 / 新旧 识别       │
+│              integrations 统一配置与脱敏                      │
+│  crawlers/   base         Adapter 基类 + 状态机               │
+│              manager      入库 / 去重 / 风险评分 / 事务        │
+│              douban beike                    HTTP 直连        │
+│              browser_fetch xianyu xiaohongshu   真实浏览器    │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+   高德 Web 服务        DeepSeek / 豆包       平台页面
+   地理编码/POI/步行路径   文字与图片理解      （真实浏览器会话）
+```
+
+| 层级 | 选型 | 说明 |
+|---|---|---|
+| 前端 | React 18 + TypeScript + Vite 5 + Ant Design 5 | 五个自有页面，无账号体系 |
+| 后端 | FastAPI + SQLAlchemy 2 | `backend.xxx` 绝对导入 |
+| 数据库 | SQLite | 单文件零配置；`houses` 与 `house_marks` 分离 |
+| 采集 | httpx + BeautifulSoup（直连）/ Playwright（浏览器） | Adapter 模式，各平台独立 |
+| 地理 | 高德 Web 服务 + 静态地铁数据 | 坐标统一为 GCJ-02 |
+| 大模型 | DeepSeek / 豆包（火山方舟） | `LLM_PROVIDER=auto` 时互为兜底 |
+
+**几个关键设计取舍**
+
+- **采集分两类**：豆瓣、贝壳走 HTTP 直连；闲鱼、小红书的搜索接口要求页面 JS 生成的
+  签名参数，**不做签名逆向**，改用真实浏览器打开搜索页、只读渲染结果——这跟手工浏览没有区别。
+- **长任务不阻塞请求**：一次采集是分钟级的，因此做成任务（`POST /tasks/collect` → 轮询进度）。
+  任务跑在同一事件循环内，同步阻塞的定位与距离计算丢进线程池，否则连进度接口都会卡住。
+- **用户数据与采集数据分表**：`houses` 是平台数据的镜像，每次采集会覆盖；
+  `house_marks` 是你的收藏与备注，独立存放，不随采集或房源下架丢失。
+- **不伪造数据**：只写「某站附近」的房源不拿站点坐标冒充房源坐标（那会把距离算成 0 米），
+  单独列为「位置待确认」；电梯状态区分「原文明确写了」与「按楼层推断」；拿不到价格就留空，不猜。
+
+### 部署到本地
+
+**环境要求**：Python 3.11+、Node.js 18+、（可选）Chromium 用于浏览器采集。
 
 ```bash
+# 1. 克隆
 git clone https://github.com/Xuzc317/Findhome.git
 cd Findhome
 
-# 建议使用独立虚拟环境
-python3 -m venv .venv
+# 2. 后端
+python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-
 pip install -r requirements.txt
 
-# 前端依赖
-cd frontend && npm install && cd ..
+# 3. 前端
+cd frontend && npm install && npm run build && cd ..
+
+# 4. 配置
+cp .env.example .env
+#    编辑 .env，至少填高德 Web 服务 Key（见下）
+
+# 5. 启动（在项目根目录执行，不要 cd 进 backend）
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# 6. 打开 http://localhost:8000
 ```
 
-### 2. 配置
-
-```bash
-cp .env.example .env                # 后端配置（Cookie / 通勤目的地）
-cp frontend/.env.example frontend/.env   # 前端配置（高德 Key）
-```
-
-- `.env`（后端，**所有密钥都放这里**）：
-  - `AMAP_WEB_KEY`：高德「**Web服务**」Key —— 后端的地理编码 / POI / 步行路径 / 地铁同步
-  - `AMAP_KEY` + `AMAP_SECURITY_CODE`：高德「**Web端(JS API)**」Key 与安全密钥 —— 前端地图
-  - `DEEPSEEK_API_KEY` / `DOUBAO_API_KEY`：大模型（用于推断房源位置）
-  - 各平台 Cookie（用 `python import_cookie.py` 导入，不要手写）
-- `frontend/.env`：**留空即可**。高德 JS Key 由后端 `/api/config` 运行时下发，
-  写进前端会被 Vite 内联进 `build/assets/*.js`，分享构建目录就泄漏 Key
-
-> 两类高德 Key **不通用**：把 JS Key 填到 `AMAP_WEB_KEY` 会返回
-> `10009 请求 Key 与绑定平台不符`。建议给 JS Key 配置域名白名单作为第二道防线。
-
-提交/推送前建议跑一次敏感信息扫描（CI 也会跑）：
-
-```bash
-python check_secrets.py          # 工作区 + 跟踪文件 + 全历史
-python check_secrets.py --fast   # 跳过历史，秒级完成
-```
-
-### 3. 启动
-
-```bash
-# 后端（http://localhost:8000，接口文档 /docs）
-python start.py backend
-
-# 前端（新终端，http://localhost:5173）
-python start.py frontend
-```
-
-> ⚠️ **必须在项目根目录运行**。所有后端模块都使用 `backend.xxx` 绝对导入，
+> ⚠️ **必须在项目根目录运行**。所有后端模块使用 `backend.xxx` 绝对导入，
 > 因此 `cd backend && uvicorn main:app` 会直接报 `ModuleNotFoundError`。
-> 正确写法：`uvicorn backend.main:app`（工作目录为项目根）。
 
-### 4. 采集数据
+#### 配置说明
 
-```bash
-# 真实探针：确认每个平台当前的真实状态与失败原因（被拦截 / 需登录 / 不可用）
-python crawl.py health
+`.env` **不要提交到 Git**（已在 `.gitignore` 中）。
 
-# 豆瓣（无需登录，但平台有频率风控；触发后需等待冷却或配置 DOUBAN_COOKIE）
-python crawl.py douban --city 北京 --pages 1
-python crawl.py douban --city 北京 --pages 1 --with-detail 5   # 额外抓前 5 条正文/图片
-python crawl.py douban --city 上海 --group <小组ID>            # 覆盖内置小组映射
+| 变量 | 用途 | 必需 |
+|---|---|---|
+| `AMAP_WEB_KEY` | 高德「**Web服务**」Key：地理编码、POI、步行路径 | ✅ 强烈建议 |
+| `AMAP_KEY` / `AMAP_SECURITY_CODE` | 高德「**Web端(JS API)**」Key 与安全密钥：前端地图 | 可选 |
+| `DEEPSEEK_API_KEY` / `DOUBAO_API_KEY` | 大模型，用于从文字/图片推断位置 | 可选 |
+| `DOUBAN_COOKIE` 等 | 各平台登录态 | 见下 |
 
-# 贝壳（列表页公开，无需 Cookie；连续快速请求会触发验证码）
-python crawl.py beike --city 深圳              # 默认整租
-python crawl.py beike --city 深圳 --rent-type 1  # 1 合租 / 3 整租
+> ⚠️ **高德两类 Key 不通用**。把 JS Key 填到 `AMAP_WEB_KEY` 会返回
+> `10009 请求 Key 与绑定平台不符`。申请地址：<https://console.amap.com/dev/key/app>
+>
+> 未配置 `AMAP_WEB_KEY` 时功能仍可用，但只能按直线距离筛选，无法计算真实步行时间。
 
-# 需要登录 Cookie 的平台（先在 .env 配置，见 docs/DATA_SOURCES.md）
-python crawl.py xianyu --city 上海
-python crawl.py xiaohongshu --city 上海
-```
+`frontend/.env` **留空即可**：高德 JS Key 由后端 `/api/config` 运行时下发，
+写进前端会被 Vite 内联进 `build/assets/*.js`，分享构建目录就会泄漏。
 
-- 豆瓣支持城市：北京（已验证）、上海、深圳、广州、杭州、成都（待验证小组 ID）
-- 贝壳支持城市：北京、上海、深圳、广州、杭州、成都、南京、武汉、西安、重庆、苏州、天津、长沙
-- **风控提示**：触发验证码/中间页时应停止请求等待冷却，不要加大频率；
-  各 Adapter 已内置最小请求间隔（豆瓣 5s、贝壳 8s）
+#### 平台登录（只接受你本人浏览器的登录态）
 
-### 5. 验收与自检
+闲鱼与小红书需要登录态。工具提供扫码登录助手 —— **不索取密码，不处理验证码**：
 
 ```bash
-# 离线测试（无需联网、不触发平台风控）
-python tests/test_parsers.py       # 解析 71 项
-python tests/test_dedup_risk.py    # 去重与风险 16 项
-python tests/test_metro_geo.py     # 地铁/坐标/房型/定位 41 项
-
-# 接口契约 + 筛选闭环自检（44 项，退出码 0 即全部通过）
-python verify_api.py
-
-# 验收记录：各来源最近的房源（标题/价格/发布时间/source_url/抓取时间/风险分）
-python verify_sources.py
-python verify_sources.py --write docs/acceptance.md
-
-# 线上一致性校验：与平台当前页面逐条比对（贝壳按房源编号比对标题+价格）
-python verify_consistency.py --limit 5
-
-# 前端端到端冒烟（可选，需 playwright，验证列表渲染 + 原始链接可打开）
-pip install playwright && python -m playwright install chromium
-python tests/test_ui_smoke.py --city 深圳
+python browser_daemon.py      # 打开浏览器，扫码登录后保持窗口不关
+python export_cookies.py      # 把登录态导出到 .env（只显示掩码）
+python import_cookie.py --check   # 校验 .env 里的登录态是否仍有效
 ```
 
-少于 5 条真实房源的来源会被标记为未达标；演示数据（`demo.local`）会被标记为不可打开且不计入。
-平台风控期间一致性校验会如实报告"无法比对"，不会假装通过。
-
-### 6. 地铁选址与房源定位（核心功能）
+也可以手工导入（粘贴 → 真实请求校验 → 写入 `.env`，校验失败不写入）：
 
 ```bash
-# 地铁数据：首次使用自动导入 data/metro/shenzhen.json（17 线 351 站）
-python crawl.py metro --city 深圳              # 导入静态数据
-python crawl.py metro --city 深圳 --sync       # 再用高德 POI 校准坐标
-
-# 房源定位：从标题/正文/图片推断坐标（记录来源与精度）
-python crawl.py locate --city 深圳 --limit 10     # 小批量，可反复调用增量推进
-python crawl.py locate --city 深圳 --no-llm       # 只用规则，不调用大模型
-
-# 步行距离：算到指定站点的真实步行路径（可反复调用增量续算）
-python crawl.py distance --station 车公庙
-python crawl.py distance --station 车公庙 --max-calls 200
+python import_cookie.py douban
 ```
 
-也可在网页左侧「更多筛选 → 数据准备」里点按钮完成同样的操作。
-
-### 7. 登录平台的 Cookie 导入（只接受你本人浏览器的 Cookie）
-
-闲鱼、小红书必须登录；豆瓣带上登录态后成功率明显提高。本工具**不索取密码**，
-Cookie 只写入被 git 忽略的 `.env`，且写入前会用真实请求校验：
+#### 首次使用
 
 ```bash
-python import_cookie.py --status      # 查看各平台状态（只显示掩码）
-python import_cookie.py --check       # 校验 .env 里已有 Cookie 是否仍有效
-python import_cookie.py xianyu        # 交互式粘贴 → 真实请求校验 → 写入 .env
-python import_cookie.py douban --clear
+# 地铁数据（深圳 17 条线路 / 351 个站点，已随仓库提供）
+python crawl.py metro --city 深圳
 
-# 浏览器获取步骤：登录后 F12 → Network → 任意请求 → Request Headers → 复制 Cookie 整行
+# 采集（也可直接在 Web 界面操作）
+python collect_from_browser.py xianyu --profile longhua --suffix 转租 --suffix 直租
+python crawl.py douban --city 深圳
+
+# 定位 + 计算步行距离 + 匹配
+python crawl.py locate --city 深圳
+python crawl.py match  --profile longhua --write docs/matches.md
 ```
 
-校验不通过时**不会写入**，并打印平台返回的真实原因（如闲鱼的 `RGV587_ERROR`、
-小红书的 `code=-101`）；确认要强行写入可加 `--force`。
+### 加入你自己的要求条件
 
-### 8. 只想先看界面？（可选）
+四种方式，从简单到灵活：
 
-没有真实数据时，可写入带 `[示例]` 前缀的演示数据来验证前后端链路：
+**① 直接用界面（推荐）**
+
+打开 <http://localhost:8000> → 选择城市 → 检查登录 → 填条件 → 开始采集。
+支持按线路选站、预算、房型、步行时间、只看转租、只看个人房东、排除中介等。
+
+**② 保存成「保存的搜索」**
+
+界面里点「保存为常用搜索」，条件会完整存进 `data/profiles/<名字>.json`，
+下次在「保存的搜索」页直接调用。
+
+**③ 直接编辑需求档案**
+
+```jsonc
+// data/profiles/longhua.json
+{
+  "name": "longhua",
+  "city": "深圳",
+  "stations": ["长圳", "上屋", "官田", "阳台山东", "元芬", "龙胜",
+               "上芬", "红山", "清湖", "龙华", "上塘", "长岭陂"],
+  "max_straight_m": 1000,        // 直线距离上限（米）
+  "max_walk_minutes": 20,        // 真实步行时间上限（分钟）
+  "price_min": 1200,
+  "price_max": 2500,
+  "layouts": ["studio", "1b1l", "2b1l"],   // 单间 / 1房1厅 / 2房1厅
+  "rent_types": [3, 4],          // 3整租 4公寓；空 = 不限
+  "exclude_shared": true,        // 排除合租
+  "avoid_old_small": true,       // 排除老破小 / 城中村 / 农民房
+  "require_elevator": false,     // 是否要求「原文明确写了有电梯」
+  "listing_kinds": ["sublet"],   // 只看转租：sublet / direct / normal
+  "poster_types": ["individual"],// 只看个人房东：individual / agency / unknown
+  "sort_by": "walk"              // walk 步行 / price 价格 / newness 房况
+}
+```
+
+保存后运行 `python crawl.py match --profile longhua`。
+
+**④ 调用 API**
 
 ```bash
-python start.py seed            # 写入 15 条演示房源（幂等）
-python seed_demo.py --clear     # 用完清理，避免与真实数据混淆
+curl -X POST http://localhost:8000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "city": "深圳",
+    "line_names": ["6号线"],
+    "price_min": 1200, "price_max": 2500,
+    "layouts": ["studio", "1b1l"],
+    "listing_kinds": ["sublet"],
+    "max_walk_minutes": 20
+  }'
 ```
 
-> 演示数据的链接是 `demo.local`，**不可打开**，因此不计入验收。
+交互式接口文档：<http://localhost:8000/docs>
 
-### 7. 打开浏览器
-
-访问 http://localhost:5173
-
-> 该脚本使用 `trust_env=False` 直连 localhost；若手动用 curl 验证中文参数，
-> 请使用 `-G --data-urlencode`，把中文直接写进 URL 会被 uvicorn 判为非法请求。
-
-### 单端口模式（可选）
-
-执行过 `npm run build` 后，后端会自动托管前端产物，
-此时只需启动后端、直接访问 http://localhost:8000 即可（深链接已做 index.html 回退）。
-
-## API 一览
+### API 一览
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
+|---|---|---|
+| POST | `/api/search` | **按任意条件搜索**（本轮新增，不依赖预存档案） |
+| GET | `/api/search/cities` | 城市列表 + 在租数 / 线路数 / 站点数 |
+| POST | `/api/tasks/collect` | **启动实时采集任务**，返回 taskId |
+| GET | `/api/tasks/{id}` | 任务进度（stage / progress / logs / result） |
+| POST | `/api/tasks/{id}/cancel` | 取消任务 |
+| POST | `/api/marks` | 收藏 / 已联系 / 不感兴趣 / 备注（增量更新） |
+| POST | `/api/marks/batch` | 批量取标记 |
+| GET | `/api/marks` | 按标记类型列出（连带房源信息） |
+| GET | `/api/settings` | **统一配置与集成状态**（密钥脱敏） |
+| GET | `/api/match` | 按保存的档案匹配 |
+| GET/POST | `/api/match/profiles` | 需求档案列表 / 保存 |
+| GET | `/api/metro/lines\|stations\|stats` | 地铁线路 / 站点 / 统计 |
+| POST | `/api/metro/stations/{id}/coverage` | 计算房源到该站的真实步行距离 |
+| GET | `/api/geo/stats`、`/api/geo/locate` | 定位覆盖率 / 批量定位 |
+| GET | `/api/config` | 前端公开配置（含 JS Key） |
 | GET | `/api/health` | 健康检查 |
-| GET | `/api/v3/houses` | 房源搜索（分页/筛选/排序） |
-| POST | `/api/v2/houses` | 地图批量取点（前端地图页使用） |
-| GET | `/api/v2/houses/{id}` | 房源详情 |
-| PUT | `/api/v2/houses-lat-lng` | 批量回填经纬度 |
-| POST | `/api/v3/houses/{id}/report` | 举报房源（本地仅登记） |
-| DELETE | `/api/v3/houses/{id}` | 软删除房源（status=1） |
-| GET | `/api/v2/cities` | 城市列表 + 各城市数据源 |
-| GET | `/api/v2/cities/{city}/districts` | 城市行政区列表 |
-| GET | `/api/houses/{id}/risk` | 风险评分明细 |
-| GET | `/api/houses/sources/count` | 各数据源房源数 |
-| GET | `/api/sources` | 数据源状态（只读） |
-| GET | `/api/sources/health` | 数据源能力声明；`?probe=true` 执行真实网络探针（含失败原因） |
-| POST | `/api/sources/{source}/enable|disable` | 启停数据源 |
-| POST | `/api/crawl` | 手动触发采集（记录日志） |
-| GET | `/api/crawl/logs` | 采集日志 |
-| GET | `/api/config` | 前端公开配置 |
 
-### 接口契约说明（重要）
-
-原前端 `src/services/base.ts` 对 axios 响应会**再取一次 `.data`**，因此：
-
-- `/v3/houses`、`/v2/cities` 等必须返回 `{"code": 0, "data": [...]}`
-- `/v3/houses` 同时兼容 `pageSize/fromPrice/toPrice/intervalDay/sortBy` 与
-  `page_size/from_price/...` 两种参数写法
-- 分页从 `page=0` 开始，`pageSize` 上限 500
+### 自检与测试
 
 ```bash
-# 实测示例
-curl 'http://localhost:8000/api/v3/houses?city=北京&pageSize=5'
-curl -G 'http://localhost:8000/api/v3/houses' --data-urlencode 'keyword=合租' \
-     --data-urlencode 'keyword_exclude=中介' -d 'sortBy=price' -d 'sortOrder=asc'
-curl 'http://localhost:8000/api/v2/cities'
+# 离线测试（不联网、不触发平台风控）
+python tests/test_parsers.py      # 解析器 71 项
+python tests/test_dedup_risk.py   # 去重与风险 16 项
+python tests/test_metro_geo.py    # 地铁/坐标/房型/定位 41 项
+python tests/test_match.py        # 条件识别与匹配 25 项（内存库隔离）
+
+# 需后端运行
+python verify_api.py              # 接口契约与筛选闭环 46 项
+python verify_search.py           # 搜索/任务/标记 + 密钥不泄漏断言 52 项
+
+# 红线检查
+python check_secrets.py           # 密钥 / Cookie / .env 不进 Git
+python check_secrets.py --fast    # 跳过历史扫描，秒级
 ```
 
-> curl 传中文参数请用 `-G --data-urlencode`，直接把中文写进 URL 会被 uvicorn 判为非法请求。
+### 已知限制
 
-## 项目结构
+1. **平台风控是主要不确定性**：豆瓣会返回中间页或 429，闲鱼/小红书会要求验证码或登录态。
+   触发后需等待冷却。本项目**不做验证码识别、签名逆向等绕过手段**。
+2. **租金解析保守**：只认带「元/月/月租/租金/k」语境的数字（裸数字兜底，并按上下文排除年份），
+   拿不到价格时显示为未知，好过把手机号当租金。
+3. **贝壳已放弃**：实测其登录/验证码对自动化过于严格（带 Cookie 的 HTTP 直连被判未登录，
+   真实浏览器打开同样回到登录页），在「不绕过访问控制」的前提下无法稳定采集。
+4. **小红书详情页被限制**：搜索页可用，但笔记详情页返回「当前笔记暂时无法浏览」，
+   因此小红书房源多停在「位置待确认」——只有标题信息，拿不到正文里的具体地址。
+5. **图片可能是宣传图**：房源图由发布者上传，本工具**无法判断图片真伪**，
+   只能标注发布者身份（个人房东 / 疑似中介）供你判断。
+6. **时间字段不猜测**：平台不给发布时间的房源 `publish_time` 留空，
+   前端明确显示「时间未知」或「(维护)」，不把采集时间冒充发布时间。
+7. **SQLite 并发**：适合个人单机使用，不适合高并发写入。
+
+### 隐私
+
+- 所有数据存在本地 `data/houses.db`，不上传任何服务器
+- 密钥与 Cookie 只存 `.env`（已 gitignore），**服务端密钥不下发到浏览器**
+- 不包含任何统计或埋点代码
+- 采集前请确认你所在地区与平台条款允许此类个人用途的数据获取
+
+### 数据来源与致谢
+
+本项目**基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch)
+修改而来**，在此向上游作者与贡献者致谢。
+
+原项目技术栈：.NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch。
+
+- **继承自上游**：项目骨架与部分前端结构、数据源 Adapter 的整体思路、LGPL v3 许可
+- **本项目重写或新增**：匹配引擎（按通勤条件反查）、地铁数据与真实步行距离、
+  位置推断与精度分级、条件识别（转租/中介/电梯/新旧）、任务化采集、
+  统一配置层、收藏与备注持久化，以及当前这套界面
+
+### License
+
+与原项目保持一致：**LGPL v3**，详见 [LICENSE](LICENSE)。
+
+版本变更见 [CHANGELOG.md](CHANGELOG.md)，协作约定见 [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)。
+
+---
+
+<a id="english"></a>
+## English
+
+### The problem
+
+Finding a rental does not start with listings — it starts with a commute:
+
+> I want a place near **these metro stations**, budget **¥1200–2500**,
+> a **studio or 1-bedroom**, **under 20 minutes on foot**, with an **elevator**,
+> and **not too old**.
+
+No mainstream platform supports searching this way, and each has its own traps:
+promotional photos, agencies posing as landlords, shared flats mixed into whole-flat
+results, and straight-line distances presented as walking distance.
+
+Findhome closes that gap:
+
+**pick stations → collect live from each platform → geocode and compute real walking
+routes → filter and categorise → show as image cards**, while keeping your favourites
+and notes in a separate, permanent store.
+
+### Features
+
+| Feature | Description |
+|---|---|
+| 🚇 **Search by metro station** | Pick by line (choosing "Line 6" expands to all its stations) |
+| 🚶 **Real walking distance** | AMap walking-route planning, not straight-line estimation; both are shown |
+| 🔑 **Sublet detection** | Distinguishes *sublet / direct-from-owner / normal*. Sublet posts tend to have genuine photos and prices |
+| 🏢 **Agency flagging** | Extracts the poster ID from image URLs; accounts listing dozens of units are flagged as suspected agencies |
+| 🖼 **Image honesty notice** | Explicitly warns that listing photos are uploaded by the poster and may be promotional |
+| 🏠 **Layout & rent type** | Studio / 1-bed / 2-bed…; shared flats excluded by default |
+| ⭐ **Favourites & notes** | Favourite, contacted, not-interested, notes — stored **independently of collected data** |
+| 📍 **Location precision tiers** | Building / community / station-only. Listings that only say "near X station" are listed separately — station coordinates are never passed off as a 0 m distance |
+| 💾 **Saved searches** | Store the current criteria as a profile and reuse it in one click |
+
+### Screenshots
+
+**① Choose city → ② Platform auth → ③ Conditions → ④ Results**
+
+![Choose city](docs/screenshots/01-choose-city.png)
+
+![Platform auth](docs/screenshots/02-auth-status.png)
+
+![Conditions](docs/screenshots/03-conditions.png)
+
+Results are shown as image cards with price, walking time, layout, elevator status,
+freshness score and poster type:
+
+![Results](docs/screenshots/04-results-cards.png)
+
+> Listing photos in these screenshots are **blurred**; text remains readable. No browser
+> chrome is captured, so no local device information is exposed.
+
+Favourites and notes survive re-collection:
+
+![Favourites](docs/screenshots/05-favorites.png)
+
+All integrations in one place; server-side secrets are shown masked only:
+
+![Settings](docs/screenshots/06-settings.png)
+
+### Architecture
 
 ```
-Findhome/
-├── backend/
-│   ├── main.py            # FastAPI 入口（lifespan 初始化数据库）
-│   ├── config.py          # 配置（路径全部以项目根为基准）
-│   ├── constants.py       # 数据源元信息 / 默认城市
-│   ├── models.py          # SQLAlchemy 模型（houses / crawl_logs / source_configs）
-│   ├── database.py        # SQLite 连接（相对路径自动解析到项目根）
-│   ├── schemas.py         # Pydantic 模型
-│   ├── routers/
-│   │   ├── houses.py      # 房源搜索/详情/风险/上报/删除
-│   │   ├── cities.py      # 城市与行政区
-│   │   ├── sources.py     # 数据源状态与采集日志
-│   │   └── config.py      # 公开配置
-│   ├── services/
-│   │   ├── search.py      # 搜索/筛选/排序
-│   │   ├── risk.py        # 中介/广告/异常三维评分
-│   │   └── dedup.py       # 链接/标题+价格+城市/小区+相似标题去重
-│   └── crawlers/
-│       ├── base.py        # 爬虫基类 + 状态机 + 租金/相对时间/拦截检测工具
-│       ├── manager.py     # 采集编排（标准化/去重/评分/入库，含真实健康探针）
-│       ├── douban.py      # 豆瓣小组（✅ 列表可用，有风控）
-│       ├── beike.py       # 贝壳找房（✅ 列表可用，详情验证码不抓取）
-│       ├── xianyu.py      # 闲鱼（🔐 需登录 Cookie）
-│       └── xiaohongshu.py # 小红书（🔐 需登录 Cookie）
-├── frontend/              # React 前端（已适配本地 API）
-│   └── .env.example       # VITE_AMAP_KEY 模板
-├── docs/
-│   ├── DATA_SOURCES.md    # 各数据源验证证据、失败原因、边界说明
-│   └── acceptance.md      # 验收记录（由 verify_sources.py 生成）
-├── data/houses.db         # SQLite 单文件（git 忽略）
-├── seed_demo.py           # 演示数据（幂等写入/清理）
-├── verify_api.py          # 接口契约 + 筛选闭环自检（31 项）
-├── verify_sources.py      # 各来源真实房源验收记录导出
-├── verify_consistency.py  # 与平台当前页面的一致性校验
-├── tests/test_parsers.py  # 解析器离线测试（71 项，无需联网）
-├── tests/test_dedup_risk.py # 去重与风险评分测试（16 项）
-├── tests/test_ui_smoke.py # 前端端到端冒烟（可选，需 playwright）
-├── start.py               # 启动脚本（backend/frontend/setup/seed）
-├── crawl.py               # 爬虫 CLI
-└── requirements.txt
+┌─────────────────────────────────────────────────────────────┐
+│  Frontend  React 18 + TypeScript + Vite 5 + Ant Design 5    │
+│  ├─ /            Live collection wizard (city→auth→query→…) │
+│  ├─ /favorites   Favourites & notes (user data)             │
+│  ├─ /search      Quick query over locally collected data    │
+│  ├─ /saved       Saved searches                             │
+│  └─ /settings    Configuration & integration status         │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ REST  /api/*
+┌───────────────────────────▼─────────────────────────────────┐
+│  Backend  FastAPI + SQLAlchemy 2 + SQLite                   │
+│                                                             │
+│  routers/    search  tasks  marks  metro  geo  houses …     │
+│  services/   match        engine (prefilter→walk→filter→sort)│
+│              collect_task taskified collection              │
+│              amap         client (3 QPS throttle + cache)   │
+│              geolocate    location inference                │
+│              condition    sublet / agency / elevator / new  │
+│              integrations centralised config + redaction    │
+│  crawlers/   base         adapter base + status machine     │
+│              manager      ingest / dedupe / risk / tx       │
+│              douban beike                   HTTP direct     │
+│              browser_fetch xianyu xiaohongshu  real browser │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+  AMap Web Service     DeepSeek / Doubao    Platform pages
+  geocode/POI/walking  text & image parsing (real browser session)
 ```
 
-## 如何添加新的数据源
+| Layer | Choice | Notes |
+|---|---|---|
+| Frontend | React 18 + TypeScript + Vite 5 + Ant Design 5 | Five own pages, no account system |
+| Backend | FastAPI + SQLAlchemy 2 | Absolute `backend.xxx` imports |
+| Database | SQLite | Single file, zero config; `houses` and `house_marks` kept separate |
+| Collection | httpx + BeautifulSoup (direct) / Playwright (browser) | Adapter pattern, one per platform |
+| Geo | AMap Web Service + static metro data | Coordinates normalised to GCJ-02 |
+| LLM | DeepSeek / Doubao (Volcano Ark) | `LLM_PROVIDER=auto` makes them fall back to each other |
 
-1. 在 `backend/crawlers/` 下创建爬虫文件，继承 `BaseCrawler`
-2. 实现 `search()`（`fetch_detail()` 可选，基类已提供默认实现）
-3. 在 `backend/crawlers/manager.py` 的 `CRAWLERS` 中注册
-4. 在 `backend/constants.py` 的 `SOURCE_CONFIGS` 中添加元信息
+**Key design decisions**
 
-## 已知限制
+- **Two collection modes.** Douban and Beike use plain HTTP. Xianyu and Xiaohongshu
+  require request signatures generated by page JavaScript; rather than
+  reverse-engineering them, the tool opens the search page in a real browser and reads
+  the rendered result — exactly what a human visit does.
+- **Long tasks never block requests.** A collection run takes minutes, so it is taskified
+  (`POST /tasks/collect` → poll progress). The task runs on the same event loop; blocking
+  geocoding and routing work is offloaded to a thread pool, otherwise even the progress
+  endpoint would hang.
+- **User data is a separate table.** `houses` mirrors platform data and is overwritten on
+  every collection; `house_marks` holds your favourites and notes and is never touched.
+- **No fabricated data.** Listings that only say "near X station" are not given the
+  station's coordinates (which would fake a 0 m distance) — they are listed separately.
+  Elevator status distinguishes *stated in the listing* from *inferred from floor count*.
+  Missing prices stay empty.
 
-1. **平台风控是主要不确定性**：豆瓣会返回"请点击下方按钮继续浏览"中间页或 429，
-   贝壳会返回验证码页。触发后需等待冷却（实测冷却后单次请求可成功），
-   本项目不做验证码识别、签名逆向等绕过手段。
-2. **租金解析保守**：只认带「元/月/月租/租金/k」语境的数字（裸数字兜底且排除年份），
-   豆瓣标题里约 1/3 拿不到价格 → 显示为未知，好过把手机号当租金。
-3. **时间字段不猜测**：贝壳列表页只有"X天前维护"，因此 `publish_time` 留空、
-   `last_active_time` 承载该值，前端标注"(维护)"。
-4. **贝壳详情页不抓取**（验证码保护），因此贝壳房源**没有经纬度**，
-   地图页不展示它们；**不伪造坐标**。
-5. **闲鱼 / 小红书需要用户本人登录 Cookie**；且两者接口还需签名头，
-   即使配置 Cookie 也可能失败，Adapter 会如实上报平台返回的原文。
-6. **豆瓣非北京城市的小组 ID 未验证**（北京 `26926`/`279962` 已验证）。
-7. **通勤时间为估算**：地图页的高德路径规划结果标注为路线规划值，
-   本地不对通勤时间做任何"真实路线时间"的推断。
-8. **无账号体系**：本地版未实现 `/v1/user/*` 登录注册，前端登录页不可用
-   （不影响搜索/筛选/地图）。
-9. **SQLite 并发**：适合个人单机使用，不适合高并发写入。
+### Local deployment
 
-## 版本管理与协作约定
+**Requirements**: Python 3.11+, Node.js 18+, (optional) Chromium for browser collection.
 
-本仓库的提交格式、版本号规则、CHANGELOG 维护与发布流程，统一遵循
-**[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md)**（面向协作者与 Agent 的约定，非硬性流程）。
-版本变更历史见 **[CHANGELOG.md](CHANGELOG.md)**，发布版本见
-[Releases](https://github.com/Xuzc317/Findhome/releases)。
+```bash
+# 1. Clone
+git clone https://github.com/Xuzc317/Findhome.git
+cd Findhome
 
-> 接手仓库管理的 Agent：动手前请先读 `docs/GIT_WORKFLOW.md`，
-> 其中包含提交信息格式、tag 规范、发布清单与敏感信息红线。
+# 2. Backend
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-## 数据来源与致谢
+# 3. Frontend
+cd frontend && npm install && npm run build && cd ..
 
-本项目基于开源项目 [liguobao/HouseSearch](https://github.com/liguobao/HouseSearch) 改造，保留原项目的前端 UI 设计。
+# 4. Configure
+cp .env.example .env
+#    Edit .env; at minimum set the AMap Web Service key
 
-原项目技术栈：.NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch
+# 5. Run (from the project root — do NOT cd into backend)
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
-## License
+# 6. Open http://localhost:8000
+```
 
-与原项目保持一致：LGPL v3
+> ⚠️ **Must be run from the project root.** All backend modules use absolute
+> `backend.xxx` imports, so `cd backend && uvicorn main:app` fails with
+> `ModuleNotFoundError`.
+
+#### Configuration
+
+`.env` must **never** be committed (already in `.gitignore`).
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `AMAP_WEB_KEY` | AMap **Web Service** key: geocoding, POI, walking routes | ✅ Strongly recommended |
+| `AMAP_KEY` / `AMAP_SECURITY_CODE` | AMap **JS API** key + security code (frontend map) | Optional |
+| `DEEPSEEK_API_KEY` / `DOUBAO_API_KEY` | LLMs for location inference from text/images | Optional |
+| `DOUBAN_COOKIE` etc. | Platform sessions | See below |
+
+> ⚠️ The two AMap key types are **not interchangeable**. Using a JS key as
+> `AMAP_WEB_KEY` returns `10009 (key/platform mismatch)`.
+> Get keys at <https://console.amap.com/dev/key/app>.
+>
+> Without `AMAP_WEB_KEY` everything still works, but filtering falls back to
+> straight-line distance only.
+
+`frontend/.env` should stay **empty**: the JS key is delivered at runtime by the backend
+via `/api/config`, because Vite would otherwise inline it into `build/assets/*.js`.
+
+#### Platform login (your own browser session only)
+
+Xianyu and Xiaohongshu need a session. A QR-login helper is provided —
+**it never asks for your password and never handles CAPTCHAs**:
+
+```bash
+python browser_daemon.py          # opens a browser; scan the QR code, keep it open
+python export_cookies.py          # exports the session to .env (masked output)
+python import_cookie.py --check   # verify the stored sessions are still valid
+```
+
+Or import manually (paste → validated with a real request → written to `.env`):
+
+```bash
+python import_cookie.py douban
+```
+
+#### First run
+
+```bash
+# Metro data (Shenzhen: 17 lines / 351 stations, shipped with the repo)
+python crawl.py metro --city 深圳
+
+# Collect (or use the web UI)
+python collect_from_browser.py xianyu --profile longhua --suffix 转租 --suffix 直租
+python crawl.py douban --city 深圳
+
+# Geocode + walking distances + match
+python crawl.py locate --city 深圳
+python crawl.py match  --profile longhua --write docs/matches.md
+```
+
+### Customising your own criteria
+
+Four ways, from easiest to most flexible:
+
+**① Use the UI (recommended)** — open <http://localhost:8000> and follow the wizard:
+choose city → check logins → set conditions → collect.
+
+**② Save as a "saved search"** — click *Save as saved search*; the full criteria set is
+stored in `data/profiles/<name>.json`.
+
+**③ Edit the profile file directly**
+
+```jsonc
+// data/profiles/longhua.json
+{
+  "name": "longhua",
+  "city": "深圳",
+  "stations": ["长圳", "上屋", "官田", "阳台山东", "元芬", "龙胜",
+               "上芬", "红山", "清湖", "龙华", "上塘", "长岭陂"],
+  "max_straight_m": 1000,        // straight-line limit (metres)
+  "max_walk_minutes": 20,        // real walking-time limit (minutes)
+  "price_min": 1200,
+  "price_max": 2500,
+  "layouts": ["studio", "1b1l", "2b1l"],
+  "rent_types": [3, 4],          // 3 = whole flat, 4 = apartment; empty = any
+  "exclude_shared": true,        // exclude shared flats
+  "avoid_old_small": true,       // exclude old / urban-village units
+  "require_elevator": false,     // require elevator to be explicitly stated
+  "listing_kinds": ["sublet"],   // sublet / direct / normal
+  "poster_types": ["individual"],// individual / agency / unknown
+  "sort_by": "walk"              // walk / price / newness
+}
+```
+
+Then run `python crawl.py match --profile longhua`.
+
+**④ Call the API**
+
+```bash
+curl -X POST http://localhost:8000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "city": "深圳",
+    "line_names": ["6号线"],
+    "price_min": 1200, "price_max": 2500,
+    "layouts": ["studio", "1b1l"],
+    "listing_kinds": ["sublet"],
+    "max_walk_minutes": 20
+  }'
+```
+
+Interactive API docs: <http://localhost:8000/docs>
+
+### Tests
+
+```bash
+# Offline (no network, no platform rate-limit risk)
+python tests/test_parsers.py      # parsers              71 checks
+python tests/test_dedup_risk.py   # dedupe & risk        16 checks
+python tests/test_metro_geo.py    # metro/geo/layout     41 checks
+python tests/test_match.py        # condition & matching 25 checks (isolated DB)
+
+# Requires the backend running
+python verify_api.py              # API contract & filter loop   46 checks
+python verify_search.py           # search/tasks/marks + no-secret-leak  52 checks
+
+# Red line
+python check_secrets.py           # keys / cookies / .env must not enter Git
+```
+
+### Known limitations
+
+1. **Platform anti-bot measures are the main uncertainty.** Douban may return an
+   interstitial or HTTP 429; Xianyu/Xiaohongshu may require a session or CAPTCHA.
+   When triggered, wait for the cooldown. This project performs **no CAPTCHA solving
+   and no signature reverse-engineering**.
+2. **Conservative rent parsing.** Only numbers with a price context (元/月/月租/租金/k)
+   are accepted; bare numbers are a fallback with year patterns excluded by context.
+   Unparseable prices are shown as unknown rather than guessed.
+3. **Beike dropped.** Its login/CAPTCHA checks are too strict for automation: an HTTP
+   request carrying a valid cookie is still treated as logged out, and a real browser
+   lands on the login page too. It cannot be collected reliably without bypassing
+   access controls.
+4. **Xiaohongshu note pages are restricted.** Search works, but note detail pages return
+   "this note is temporarily unavailable", so most Xiaohongshu listings stay in the
+   "location unconfirmed" tier — title only, no street address from the body.
+5. **Photos may be promotional.** Listing photos are uploaded by the poster and this tool
+   **cannot verify them**. It only labels the poster type (individual / suspected agency)
+   so you can judge.
+6. **No guessed timestamps.** When a platform does not expose a publish time,
+   `publish_time` stays empty and the UI says "time unknown" — collection time is never
+   presented as publish time.
+7. **SQLite concurrency.** Fine for single-user local use, not for concurrent writes.
+
+### Privacy
+
+- All data lives in your local `data/houses.db`; nothing is uploaded anywhere
+- Keys and cookies live only in `.env` (gitignored); **server-side secrets are never
+  sent to the browser**
+- No analytics or telemetry of any kind
+- Before collecting, make sure such personal use is permitted in your jurisdiction and
+  by the platform's terms
+
+### Credits & licence
+
+This project is **based on the open-source project
+[liguobao/HouseSearch](https://github.com/liguobao/HouseSearch)**. Thanks to the original
+author and contributors.
+
+Original stack: .NET Core + Vue.js + MySQL + Redis + MongoDB + Elasticsearch.
+
+- **Inherited**: project skeleton and parts of the frontend structure, the data-source
+  adapter concept, and the LGPL v3 licence
+- **Rewritten / added here**: the matching engine (commute-first search), metro data and
+  real walking distances, location inference with precision tiers, condition detection
+  (sublet / agency / elevator / freshness), taskified collection, the centralised
+  configuration layer, favourites & notes persistence, and the current UI
+
+Released under **LGPL v3**, same as upstream. See [LICENSE](LICENSE).
