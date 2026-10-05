@@ -16,6 +16,7 @@ import MapPage from "./pages/map";
 import MatchPage from "./pages/match/index";
 import SearchPage from "./pages/search/index";
 import CollectWizard from "./pages/collect/index";
+import FavoritesPage from "./pages/favorites/index";
 import SettingsPage from "./pages/settings/index";
 
 const router = createBrowserRouter([
@@ -37,6 +38,11 @@ const router = createBrowserRouter([
     path: "/collect",
     id: "collect",
     element: <CollectWizard />,
+  },
+  {
+    path: "/favorites",
+    id: "favorites",
+    element: <FavoritesPage />,
   },
   {
     path: "/search",

@@ -28,6 +28,7 @@ import { HouseCard } from "@/components/house-card";
 import { API_BASE_URL } from "@/constant";
 import { MetroService } from "@/services/metro";
 import { DEFAULT_COLLECT, CollectCriteria, TaskLog, taskService } from "@/services/task";
+import { HouseMark, markService } from "@/services/mark";
 
 const metroService = new MetroService();
 const { Text } = Typography;
@@ -95,6 +96,11 @@ export default function CollectWizard() {
   const pollRef = useRef<number | null>(null);
   const [pictures, setPictures] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<"precise" | "pending">("precise");
+  const [marks, setMarks] = useState<Record<string, HouseMark>>({});
+  // 结果页的标记筛选：默认隐藏"不感兴趣"，让用户不必每次手动刨掉
+  const [markFilter, setMarkFilter] = useState<"all" | "favorite" | "contacted" | "hideHidden">(
+    "hideHidden"
+  );
 
   const patch = (p: Partial<CollectCriteria>) => setCriteria((c) => ({ ...c, ...p }));
 
@@ -187,6 +193,11 @@ export default function CollectWizard() {
             }
           }
           setPictures(pics);
+          try {
+            setMarks(await markService.batch(ids));
+          } catch {
+            /* 标记取不到不影响主流程 */
+          }
           message.success(`完成：符合 ${result.total ?? 0} 套`);
         }
       }
@@ -217,7 +228,16 @@ export default function CollectWizard() {
   }, []);
 
   const result = task?.result;
-  const list = tab === "precise" ? result?.data || [] : result?.pendingLocation || [];
+  const rawList = tab === "precise" ? result?.data || [] : result?.pendingLocation || [];
+  const list = useMemo(() => {
+    return rawList.filter((m: any) => {
+      const mk = marks[m.house_id];
+      if (markFilter === "hideHidden") return !mk?.hidden;
+      if (markFilter === "favorite") return !!mk?.favorite;
+      if (markFilter === "contacted") return !!mk?.contacted;
+      return true;
+    });
+  }, [rawList, marks, markFilter]);
   const withPic = (m: any) => ({ ...m, picture: pictures[m.house_id] });
 
   const currentCity = useMemo(
@@ -667,6 +687,19 @@ export default function CollectWizard() {
                   />
                 </div>
 
+                <div style={{ marginTop: 12 }}>
+                  <Segmented
+                    value={markFilter}
+                    onChange={(v) => setMarkFilter(v as any)}
+                    options={[
+                      { label: "隐藏不感兴趣", value: "hideHidden" },
+                      { label: "⭐ 只看收藏", value: "favorite" },
+                      { label: "☎ 已联系", value: "contacted" },
+                      { label: "全部", value: "all" },
+                    ]}
+                  />
+                </div>
+
                 <Alert
                   type="warning"
                   showIcon
@@ -685,7 +718,19 @@ export default function CollectWizard() {
                       columnClassName="my-masonry-grid_column"
                     >
                       {list.map((m: any) => (
-                        <HouseCard key={`${m.house_id}-${m.nearest_station}`} item={withPic(m)} />
+                        <HouseCard
+                          key={`${m.house_id}-${m.nearest_station}`}
+                          item={withPic(m)}
+                          mark={marks[m.house_id]}
+                          onMarkChange={(next) =>
+                            setMarks((prev) => {
+                              const copy = { ...prev };
+                              if (next) copy[m.house_id] = next;
+                              else delete copy[m.house_id];
+                              return copy;
+                            })
+                          }
+                        />
                       ))}
                     </Masonry>
                   )}

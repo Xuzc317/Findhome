@@ -212,3 +212,23 @@ class StationDistance(Base):
         Index('idx_house_station', 'house_id', 'station_id', unique=True),
         Index('idx_station_walk', 'station_id', 'walk_meters'),
     )
+
+
+class HouseMark(Base):
+    """用户对房源的标记与备注
+
+    为什么单独建表而不加到 House 上：
+    House 是**平台数据的镜像**，会被每次采集覆盖更新；而"我收藏了它""我打过电话"
+    是**用户自己的数据**，必须独立于采集而长期保存，不能被覆盖或随房源下架丢失。
+    """
+    __tablename__ = "house_marks"
+
+    id = Column(String(32), primary_key=True, default=generate_uuid)
+    house_id = Column(String(32), nullable=False, unique=True, index=True,
+                      comment="关联的房源 id（一房源一条记录）")
+    favorite = Column(Integer, default=0, comment="收藏 1/0")
+    contacted = Column(Integer, default=0, comment="已联系 1/0")
+    hidden = Column(Integer, default=0, comment="不感兴趣 1/0")
+    note = Column(Text, nullable=True, comment="我的备注")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

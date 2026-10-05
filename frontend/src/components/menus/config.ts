@@ -5,6 +5,12 @@ export const MENUS_LIST = [{
   icon: "/images/home.png",
 },
 {
+  title: "收藏与记录",
+  key: "favorites",
+  path: "/favorites",
+  icon: "/images/home.png",
+},
+{
   title: "快速查询",
   key: "search",
   path: "/search",

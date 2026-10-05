@@ -217,6 +217,45 @@ def main():
         c.check("按价格升序",
                 all(ps[i] <= ps[i + 1] for i in range(len(ps) - 1)), str(ps[:6]))
 
+    # ---------------- 房源标记（用户数据持久化）----------------
+    print("\n【房源标记与备注】")
+    probe_id = "_verify_probe_house"
+    # 先清干净，保证可重复运行
+    c.client.delete(f"{c.base}/marks/{probe_id}")
+
+    r = c.post("/marks", json={"houseId": probe_id, "favorite": True,
+                               "note": "自检产生的备注"})
+    d = (r.json().get("data") or {}) if r.status_code == 200 else {}
+    c.check("写入收藏与备注", r.status_code == 200 and d.get("favorite") is True,
+            f"HTTP {r.status_code}")
+    c.check("备注被保存", d.get("note") == "自检产生的备注", str(d.get("note")))
+
+    r = c.post("/marks", json={"houseId": probe_id, "contacted": True})
+    d2 = (r.json().get("data") or {}) if r.status_code == 200 else {}
+    c.check("增量更新不覆盖已有字段",
+            d2.get("contacted") is True and d2.get("favorite") is True
+            and d2.get("note") == "自检产生的备注",
+            f"favorite={d2.get('favorite')} contacted={d2.get('contacted')}")
+
+    r = c.post("/marks/batch", json={"houseIds": [probe_id, "not-exist-id"]})
+    batch = (r.json().get("data") or {}) if r.status_code == 200 else {}
+    c.check("批量查询只返回有标记的",
+            probe_id in batch and "not-exist-id" not in batch,
+            f"{len(batch)} 条")
+
+    r = c.get("/marks", params={"filter": "favorite"})
+    favs = (r.json().get("data") or []) if r.status_code == 200 else []
+    c.check("收藏夹能查到刚写入的",
+            any(x.get("houseId") == probe_id for x in favs), f"{len(favs)} 条")
+
+    # 清空后记录应被删除（不留空行）
+    c.post("/marks", json={"houseId": probe_id, "favorite": False,
+                           "contacted": False, "hidden": False, "note": ""})
+    r = c.get("/marks", params={"filter": "all"})
+    rest = (r.json().get("data") or []) if r.status_code == 200 else []
+    c.check("清空标记后不留空记录",
+            not any(x.get("houseId") == probe_id for x in rest))
+
     # ---------------- 配置层 ----------------
     print("\n【统一配置状态】")
     r = c.get("/settings")

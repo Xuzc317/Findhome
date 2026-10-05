@@ -1,5 +1,7 @@
-import { Tag, Tooltip } from "antd";
+import { Button, Input, Modal, Tag, Tooltip, message } from "antd";
+import { useState } from "react";
 import type { MatchedHouse } from "@/services/match";
+import { HouseMark, markService } from "@/services/mark";
 
 export const SOURCE_LABEL: Record<string, string> = {
   xianyu: "闲鱼",
@@ -74,10 +76,33 @@ function PosterTag({ item }: { item: MatchedHouse }) {
 export function HouseCard({
   item,
   showStation = true,
+  mark,
+  onMarkChange,
 }: {
   item: MatchedHouse;
   showStation?: boolean;
+  mark?: Partial<HouseMark>;
+  onMarkChange?: (next: HouseMark | null) => void;
 }) {
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(mark?.note || "");
+  const [busy, setBusy] = useState(false);
+
+  const favorite = !!mark?.favorite;
+  const contacted = !!mark?.contacted;
+  const hidden = !!mark?.hidden;
+
+  const toggle = async (patch: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      const next = await markService.update(item.house_id, patch as any);
+      onMarkChange?.(next);
+    } catch {
+      message.error("保存标记失败");
+    } finally {
+      setBusy(false);
+    }
+  };
   const walkText =
     item.walk_minutes != null
       ? `🚇 步行 ${item.walk_minutes} 分钟 · ${item.walk_m}m`
@@ -217,6 +242,64 @@ export function HouseCard({
           </div>
         )}
 
+        {/* 操作按键：收藏 / 已联系 / 不感兴趣 / 备注
+            这些是用户自己的数据，落库保存，采集覆盖房源时不会丢 */}
+        <div
+          style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button
+            size="small"
+            type={favorite ? "primary" : "default"}
+            danger={favorite}
+            loading={busy}
+            onClick={() => toggle({ favorite: !favorite })}
+          >
+            {favorite ? "★ 已收藏" : "☆ 收藏"}
+          </Button>
+          <Button
+            size="small"
+            type={contacted ? "primary" : "default"}
+            loading={busy}
+            onClick={() => toggle({ contacted: !contacted })}
+          >
+            {contacted ? "✔ 已联系" : "☎ 已联系"}
+          </Button>
+          <Button
+            size="small"
+            type={hidden ? "primary" : "default"}
+            loading={busy}
+            onClick={() => toggle({ hidden: !hidden })}
+          >
+            {hidden ? "🚫 已排除" : "🚫 不感兴趣"}
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              setNoteDraft(mark?.note || "");
+              setNoteOpen(true);
+            }}
+          >
+            {mark?.note ? "📝 备注*" : "📝 备注"}
+          </Button>
+        </div>
+
+        {mark?.note && (
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 12,
+              color: "#8c8c8c",
+              background: "#fffbe6",
+              border: "1px solid #ffe58f",
+              borderRadius: 6,
+              padding: "4px 8px",
+            }}
+          >
+            📝 {mark.note}
+          </div>
+        )}
+
         <div
           style={{
             marginTop: 10,
@@ -242,6 +325,27 @@ export function HouseCard({
           </a>
         </div>
       </div>
+
+      <Modal
+        title="我的备注"
+        open={noteOpen}
+        onCancel={() => setNoteOpen(false)}
+        onOk={async () => {
+          await toggle({ note: noteDraft });
+          setNoteOpen(false);
+        }}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Input.TextArea
+          rows={4}
+          maxLength={500}
+          showCount
+          placeholder="例如：周六下午看房、问清楚电梯和物业费、房东说可以短租"
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+        />
+      </Modal>
     </div>
   );
 }
