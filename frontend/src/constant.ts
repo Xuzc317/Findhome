@@ -1,4 +1,3 @@
-// export const API_BASE_URL = "https://house2048.cn/api";
 export const API_BASE_URL = "http://localhost:8000/api";
 
 export const StorageKey = {

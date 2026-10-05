@@ -1,55 +1,33 @@
-import { Button } from "antd";
 import { MENUS_LIST } from "./config";
 import styles from "./styles.module.css";
 import classNames from "classnames";
 import { UNSAFE_useRouteId, useNavigate } from "react-router-dom";
-import { useUserInfo } from "@/hook/user";
+
+/**
+ * 侧边导航。已移除上游的用户体系（本地个人工具不需要登录）。
+ */
 export default function Menus() {
   const id = UNSAFE_useRouteId();
   const navigate = useNavigate();
-  const { userInfo, loading } = useUserInfo(false);
-  const menus = MENUS_LIST.filter((menu) => {
-    if (menu.auth) {
-      return !!userInfo;
-    }
-    return true
-  });
 
   return (
     <>
       <div style={{ width: 250, flexShrink: 0 }}></div>
       <div className={styles.container}>
-        {menus.map((menu) => (
+        {MENUS_LIST.map((menu) => (
           <div
             key={menu.key}
             className={classNames(styles.item, {
               [styles.itemSel]: id === menu.key,
             })}
-            onClick={() => {
-              if (menu.outside) {
-                window.open(menu.path, "_blank");
-              } else {
-                navigate(menu.path);
-              }
-            }}
+            onClick={() => navigate(menu.path)}
           >
-            <img src={menu.icon} />
+            <span style={{ fontSize: 16, width: 20, textAlign: "center" }}>
+              {menu.icon}
+            </span>
             <span>{menu.title}</span>
           </div>
         ))}
-
-        {!userInfo && !loading && (
-          <Button
-            type="primary"
-            className={styles.loginBtn}
-            size="large"
-            onClick={() => {
-              navigate("/user/login");
-            }}
-          >
-            登录
-          </Button>
-        )}
       </div>
     </>
   );

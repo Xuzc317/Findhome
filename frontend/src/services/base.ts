@@ -1,8 +1,7 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
-import { API_BASE_URL, StorageKey } from "@/constant";
-import { getBrowserToken, setBrowserToken } from "@/utils/user";
-import { removeLocalStorage } from "@/utils/storage";
+import { API_BASE_URL } from "@/constant";
+
 export const CODE_ERROR = -99;
 
 export default class BaseService {
@@ -14,15 +13,7 @@ export default class BaseService {
       timeout: 10000 * 6,
     });
 
-    // 添加请求拦截器
-    this.instance.interceptors.request.use(function (config) {
-      const token = getBrowserToken();
-      // 如果token存在，则将其添加到请求头
-      if (token) {
-        config.headers["token"] = token;
-      }
-      return config;
-    });
+    // 本地个人工具，无登录体系，因此不再注入 token 请求头
   }
 
   protected async get<T>(path: string, params?: Params, skipTokenError?: boolean) {
@@ -65,11 +56,9 @@ export default class BaseService {
         !skipTokenError &&
         (error.response?.status === 401 || error.response?.status === 403)
       ) {
-        setBrowserToken("");
-        removeLocalStorage(StorageKey.USER_INFO)
-        window.location.href = "/user/login/";
+        // 无登录体系：不跳转登录页，直接把后端返回的错误往上抛
         return Promise.reject(
-          new CustomError("您的登录已过期，请重新登录。", CODE_ERROR, 401),
+          new CustomError("请求被拒绝（401/403）", CODE_ERROR, error.response.status),
         );
       }
       let message = error.message;

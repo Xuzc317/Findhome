@@ -1,42 +1,26 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import "./index.css";
 import { ConfigProvider } from "antd";
 
-import HomePage from "./pages/home";
-import Login from "./pages/user/login/index";
-import FindPassword from "./pages/user/find-password/index";
-import UserInfo from "./pages/user/info/index";
-import HousesList from "./pages/houses-list/index";
-import { CitiesProvider } from "./hook/cities";
-import HouseDetail from "./pages/house-detail";
-import MobileModal from "./components/mobile-modal/index.";
-import MapPage from "./pages/map";
-import MatchPage from "./pages/match/index";
-import SearchPage from "./pages/search/index";
 import CollectWizard from "./pages/collect/index";
 import FavoritesPage from "./pages/favorites/index";
+import SearchPage from "./pages/search/index";
+import MatchPage from "./pages/match/index";
 import SettingsPage from "./pages/settings/index";
+import HouseDetail from "./pages/house-detail";
 
 const router = createBrowserRouter([
+  // 主入口：实时采集向导（城市 → 授权 → 条件 → 结果）
   {
     path: "/",
-    element: <HomePage />,
-  },
-  {
-    path: "/houses-list",
-    id: "houses-list",
-    element: <HousesList />,
-  },
-  {
-    path: "/map",
-    id: "map",
-    element: <MapPage />,
+    id: "collect",
+    element: <CollectWizard />,
   },
   {
     path: "/collect",
-    id: "collect",
+    id: "collect-alias",
     element: <CollectWizard />,
   },
   {
@@ -50,47 +34,36 @@ const router = createBrowserRouter([
     element: <SearchPage />,
   },
   {
+    path: "/saved",
+    id: "saved",
+    element: <MatchPage />,
+  },
+  {
     path: "/settings",
     id: "settings",
     element: <SettingsPage />,
   },
   {
-    path: "/match",
-    id: "match",
-    element: <MatchPage />,
-  },
-  {
     path: "/houses/:id",
     element: <HouseDetail />,
   },
+  // 旧路径兜底：上游项目的入口一律指回主入口，避免收藏的旧链接 404
   {
-    path: "/user/login",
-    element: <Login />,
-  },
-  {
-    path: "/user/info",
-    id: "user-info",
-    element: <UserInfo />,
-  },
-  {
-    path: "/user/find-password",
-    element: <FindPassword />,
+    path: "*",
+    element: <Navigate to="/" replace />,
   },
 ]);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <CitiesProvider>
-      <ConfigProvider
-        theme={{
-          token: {
-            colorPrimary: "#00a3ca",
-          },
-        }}
-      >
-        <RouterProvider router={router} />
-        <MobileModal />
-      </ConfigProvider>
-    </CitiesProvider>
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: "#00a3ca",
+        },
+      }}
+    >
+      <RouterProvider router={router} />
+    </ConfigProvider>
   </StrictMode>,
 );

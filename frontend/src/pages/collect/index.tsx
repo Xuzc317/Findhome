@@ -258,7 +258,7 @@ export default function CollectWizard() {
   return (
     <BaseLayout>
       <Helmet>
-        <title>搜索房源 · Findhome</title>
+        <title>实时采集 · Findhome</title>
       </Helmet>
 
       <div style={{ maxWidth: 1360, margin: "0 auto", padding: "16px 16px 60px" }}>

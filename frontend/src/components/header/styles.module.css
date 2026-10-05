@@ -98,3 +98,9 @@
 .placeholder {
   height: 90px;
 }
+
+/* 自有品牌标记：用 emoji 替代上游的 logo.png，避免依赖被删的图片资源 */
+.logoMark {
+  font-size: 26px;
+  line-height: 1;
+}

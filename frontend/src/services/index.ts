@@ -1,7 +1,8 @@
-import CitiesService from "./cities";
+/**
+ * 服务聚合出口。
+ *
+ * 已移除上游的 CitiesService / UserService（本地工具无城市弹窗与登录体系）。
+ */
 import HousesService from "./houses";
-import UserService from "./user";
 
-export const userService = new UserService();
-export const citiesService = new CitiesService();
 export const housesService = new HousesService();

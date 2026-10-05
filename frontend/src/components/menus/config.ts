@@ -1,50 +1,19 @@
-export const MENUS_LIST = [{
-  title: "实时采集",
-  key: "collect",
-  path: "/collect",
-  icon: "/images/home.png",
-},
-{
-  title: "收藏与记录",
-  key: "favorites",
-  path: "/favorites",
-  icon: "/images/home.png",
-},
-{
-  title: "快速查询",
-  key: "search",
-  path: "/search",
-  icon: "/images/home.png",
-},
-{
-  title: "保存的搜索",
-  key: "match",
-  path: "/match",
-  icon: "/images/home.png",
-},
-{
-  title: "发现",
-  key: "houses-list",
-  path: "/houses-list",
-  icon: "/images/home.png",
-}, 
-{
-  title: "地图",
-  key: "map",
-  path: "/map",
-  outside: false,
-  icon: "/images/map.png",
-},
-{
-  title: "配置",
-  key: "settings",
-  path: "/settings",
-  icon: "/images/usercenter.png",
-},
-{
-  title: "我的",
-  key: "user-info",
-  path: "/user/info",
-  icon: "/images/usercenter.png",
-  auth: true,
-}];
+/**
+ * 侧边导航。图标用 emoji，不再依赖上游项目的 png 图标资源。
+ *
+ * 顺序即使用顺序：先采集 → 再看收藏 → 然后才是查库与配置。
+ */
+export interface MenuItem {
+  title: string;
+  key: string;
+  path: string;
+  icon: string;
+}
+
+export const MENUS_LIST: MenuItem[] = [
+  { title: "实时采集", key: "collect", path: "/", icon: "🔍" },
+  { title: "收藏与记录", key: "favorites", path: "/favorites", icon: "⭐" },
+  { title: "快速查询", key: "search", path: "/search", icon: "⚡" },
+  { title: "保存的搜索", key: "saved", path: "/saved", icon: "💾" },
+  { title: "配置", key: "settings", path: "/settings", icon: "⚙️" },
+];

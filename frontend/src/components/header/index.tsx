@@ -1,65 +1,42 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import styles from "./styles.module.css";
-import classNames from "classnames";
-import { useEffect, useState } from "react";
-import { CitiesModal } from "../cities";
 
+/**
+ * 顶栏：只保留品牌与导航。
+ *
+ * 已移除上游项目的「城市选择弹窗」——城市现在由主入口向导的第一步决定，
+ * 顶栏再放一个城市开关会出现两处状态、互相打架。
+ */
 export default function Header(props: {
   headerLeft?: React.ReactNode;
   style?: React.CSSProperties;
-  hiddenCity?: boolean;
-  hiddenPlaceholder?: boolean;
 }) {
-  const [cityModalVisible, setCityModalVisible] = useState(false);
-  const [searchParams] = useSearchParams();
-
-  useEffect(() => {
-    // 通过事件 触发显示城市选择弹窗
-    const showCityModal = () => {
-      setCityModalVisible(true);
-    };
-    window.addEventListener("showCityModal", showCityModal);
-    return () => {
-      window.removeEventListener("showCityModal", showCityModal);
-    };
-  }, []);
-
   return (
     <>
       <header className={styles.container} style={props.style}>
         <div className={styles.content}>
-          <Link to={"/"}>
+          <Link to={"/"} style={{ textDecoration: "none" }}>
             <div className={styles.titleContainer}>
-              <img className={classNames(styles.logo, styles.mobileHidden)} src="/logo.png" />
-              <h1 className="ml-4">地图搜租房</h1>
+              <span className={styles.logoMark}>🏠</span>
+              <h1 style={{ fontSize: 20, margin: "0 0 0 10px" }}>
+                Findhome
+              </h1>
+              <span
+                style={{
+                  marginLeft: 10,
+                  fontSize: 12,
+                  color: "#8c8c8c",
+                  fontWeight: 400,
+                }}
+              >
+                本地租房聚合与通勤筛选
+              </span>
             </div>
           </Link>
           {props.headerLeft && <div className={styles.left}>{props.headerLeft}</div>}
-          {!props.hiddenCity && (
-            <div
-              className={styles.cityContainer}
-              onClick={() => {
-                setCityModalVisible(true);
-              }}
-            >
-              <img src="/images/positioning.png" className={styles.positioningIcon} />
-              {searchParams.get("city") || "上海"}
-            </div>
-          )}
-
         </div>
       </header>
-      {!props.hiddenPlaceholder && <div className={styles.placeholder} />}
-      <CitiesModal
-        visible={cityModalVisible}
-        onClose={() => {
-          setCityModalVisible(false);
-        }}
-      />
+      <div className={styles.placeholder} />
     </>
   );
-}
-
-export function showCityModal() {
-  window.dispatchEvent(new Event("showCityModal"));
 }
