@@ -128,6 +128,12 @@ async def search(request: SearchRequest = Body(...), db: Session = Depends(get_d
     }
 
 
+# 当前实际支持的城市。只保留这两个：其余城市既没有地铁数据、
+# 也没有稳定可用的房源来源，列出来只会让用户选了却搜不到东西。
+# 新城市接入时同步补这里。
+SUPPORTED_CITIES = ["深圳", "北京"]
+
+
 @router.get("/search/cities")
 async def search_cities(db: Session = Depends(get_db)):
     """可选城市（含各地铁线路数与在租房源数），供"城市优先选择"使用"""
@@ -142,9 +148,7 @@ async def search_cities(db: Session = Depends(get_db)):
                      .group_by(MetroLine.city).all())
 
     cities = []
-    for city in sorted(set(list(house_rows) + list(station_rows)), key=lambda c: (c is None, c)):
-        if not city:
-            continue
+    for city in SUPPORTED_CITIES:
         cities.append({
             "name": city,
             "houseCount": house_rows.get(city, 0),

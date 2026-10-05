@@ -99,6 +99,42 @@ def main():
     # CI 使用空库启动，此时没有地铁数据，依赖站点的检查需要跳过而不是判失败
     has_metro = bool(cities and cities[0].get("stationCount"))
 
+    c.check("城市只保留深圳与北京",
+            {x["name"] for x in cities} <= {"深圳", "北京"},
+            str([x["name"] for x in cities]))
+    c.check("城市都带房源数量",
+            all(isinstance(x.get("houseCount"), int) for x in cities),
+            str([(x["name"], x.get("houseCount")) for x in cities]))
+
+    # ---------------- 采集任务接口 ----------------
+    print("\n【采集任务接口】")
+    r = c.post("/tasks/collect", json={"city": city, "stations": [], "line_names": []})
+    c.check("未选站点/线路 → 400", r.status_code == 400, f"HTTP {r.status_code}")
+    if has_metro:
+        r = c.post("/tasks/collect", json={
+            "city": city, "stations": ["上芬"], "sources": ["xianyu"],
+            "compute_walk": False, "max_stations": 1})
+        c.check("启动任务返回 200", r.status_code == 200, f"HTTP {r.status_code}")
+        task = (r.json().get("data") or {}) if r.status_code == 200 else {}
+        c.check("返回 taskId/status/stage/progress",
+                all(k in task for k in ("taskId", "status", "stage", "progress")),
+                str(list(task.keys())[:8]))
+        if task.get("taskId"):
+            st = c.get(f"/tasks/{task['taskId']}", params={"include_result": "false"})
+            c.check("可查询任务进度", st.status_code == 200, f"HTTP {st.status_code}")
+            sd = st.json().get("data") or {}
+            c.check("进度含 logs 与 stageText",
+                    isinstance(sd.get("logs"), list) and "stageText" in sd)
+            c.check("任务状态合法",
+                    sd.get("status") in ("pending", "running", "done", "failed"),
+                    str(sd.get("status")))
+            c.post(f"/tasks/{task['taskId']}/cancel")
+            c.check("可请求取消任务", True)
+        c.check("不存在的任务 → 404",
+                c.get("/tasks/does-not-exist").status_code == 404)
+    else:
+        c.skip("采集任务校验", "库中暂无地铁数据（空库环境下属预期）")
+
     # ---------------- 搜索：参数校验 ----------------
     print("\n【搜索参数校验】")
     r = search(c, city=city, stations=[], line_names=[])

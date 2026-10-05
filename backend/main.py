@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db
-from backend.routers import cities, geo, houses, match, metro, search, sources
+from backend.routers import cities, geo, houses, match, metro, search, sources, tasks
 from backend.routers import config as config_router
 
 
@@ -42,6 +42,7 @@ app.include_router(metro.router, prefix="/api", tags=["metro"])
 app.include_router(geo.router, prefix="/api", tags=["geo"])
 app.include_router(match.router, prefix="/api", tags=["match"])
 app.include_router(search.router, prefix="/api", tags=["search"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(config_router.router, prefix="/api", tags=["config"])
 

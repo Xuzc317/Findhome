@@ -1,5 +1,11 @@
 export const MENUS_LIST = [{
-  title: "搜索房源",
+  title: "实时采集",
+  key: "collect",
+  path: "/collect",
+  icon: "/images/home.png",
+},
+{
+  title: "快速查询",
   key: "search",
   path: "/search",
   icon: "/images/home.png",
