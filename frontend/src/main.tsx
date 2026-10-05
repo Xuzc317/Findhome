@@ -14,6 +14,8 @@ import HouseDetail from "./pages/house-detail";
 import MobileModal from "./components/mobile-modal/index.";
 import MapPage from "./pages/map";
 import MatchPage from "./pages/match/index";
+import SearchPage from "./pages/search/index";
+import SettingsPage from "./pages/settings/index";
 
 const router = createBrowserRouter([
   {
@@ -29,6 +31,16 @@ const router = createBrowserRouter([
     path: "/map",
     id: "map",
     element: <MapPage />,
+  },
+  {
+    path: "/search",
+    id: "search",
+    element: <SearchPage />,
+  },
+  {
+    path: "/settings",
+    id: "settings",
+    element: <SettingsPage />,
   },
   {
     path: "/match",

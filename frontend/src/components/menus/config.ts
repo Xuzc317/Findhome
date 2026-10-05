@@ -1,4 +1,10 @@
 export const MENUS_LIST = [{
+  title: "搜索房源",
+  key: "search",
+  path: "/search",
+  icon: "/images/home.png",
+},
+{
   title: "我的需求",
   key: "match",
   path: "/match",
@@ -16,6 +22,12 @@ export const MENUS_LIST = [{
   path: "/map",
   outside: false,
   icon: "/images/map.png",
+},
+{
+  title: "配置",
+  key: "settings",
+  path: "/settings",
+  icon: "/images/usercenter.png",
 },
 {
   title: "我的",

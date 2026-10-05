@@ -61,6 +61,12 @@ class Profile:
     require_precise_location: bool = True
     min_newness_score: Optional[int] = None
     avoid_old_small: bool = True        # 排除老破小类特征
+    # ---- 以下为"搜索表单"需要的条件（原档案没有，做成通用搜索后补齐）----
+    sources: List[str] = field(default_factory=list)        # 数据源白名单
+    listing_kinds: List[str] = field(default_factory=list)  # sublet/direct/normal
+    poster_types: List[str] = field(default_factory=list)   # individual/agency/unknown
+    sort_by: str = "walk"               # walk 步行 / price 价格 / newness 房况
+    exclude_agency: bool = False        # 排除批量发布的机构房源
     notes: str = ""
 
     def to_dict(self) -> dict:
@@ -188,6 +194,8 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
         query = query.filter(House.layout_key.in_(profile.layouts))
     if profile.rent_types:
         query = query.filter(House.rent_type.in_(profile.rent_types))
+    if profile.sources:
+        query = query.filter(House.source.in_(profile.sources))
     candidates = query.all()
 
     # 求租帖排除：这些是"找房的人"发的，不是房源（实测混进来会让用户白点链接）
@@ -286,6 +294,15 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
                 station_lines_cache[station.id] = _station_lines(db, station)
             _sid = extract_seller_id(house)
             _sn = seller_counts.get(_sid or "", 1)
+            _kind2 = listing_kind(house.title, house.description)
+            _poster2 = ("agency" if _sn >= AGENCY_THRESHOLD
+                        else ("individual" if _sid else "unknown"))
+            if profile.listing_kinds and _kind2 not in profile.listing_kinds:
+                continue
+            if profile.poster_types and _poster2 not in profile.poster_types:
+                continue
+            if profile.exclude_agency and _poster2 == "agency":
+                continue
             imprecise.append(MatchedHouse(
                 is_fresh=bool(house.tags and "新发布" in house.tags),
                 listing_kind=listing_kind(house.title, house.description),
@@ -399,6 +416,15 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             caveats.append("坐标按地铁站近似，实际位置可能偏差")
 
         _fresh = bool(house.tags and "新发布" in house.tags)
+        _kind = listing_kind(house.title, house.description)
+        _poster = ("agency" if seller_n >= AGENCY_THRESHOLD
+                   else ("individual" if seller_id else "unknown"))
+        if profile.listing_kinds and _kind not in profile.listing_kinds:
+            continue
+        if profile.poster_types and _poster not in profile.poster_types:
+            continue
+        if profile.exclude_agency and _poster == "agency":
+            continue
         results.append(MatchedHouse(
             is_fresh=_fresh,
             listing_kind=listing_kind(house.title, house.description),
@@ -423,12 +449,19 @@ def match(db: Session, profile: Profile, amap: Optional[AmapClient] = None,
             reasons=reasons, caveats=caveats,
         ))
 
-    # ---------- 8) 排序：先按步行时间，再按新旧 ----------
-    results.sort(key=lambda m: (
-        m.walk_minutes if m.walk_minutes is not None else 999,
-        m.straight_m,
-        -m.newness_score,
-    ))
+    # ---------- 8) 排序（可配置）----------
+    if profile.sort_by == "price":
+        results.sort(key=lambda m: (m.price if m.price is not None else 10 ** 9,
+                                    m.walk_minutes if m.walk_minutes is not None else 999))
+    elif profile.sort_by == "newness":
+        results.sort(key=lambda m: (-m.newness_score,
+                                    m.walk_minutes if m.walk_minutes is not None else 999))
+    else:  # walk 默认：步行时间优先
+        results.sort(key=lambda m: (
+            m.walk_minutes if m.walk_minutes is not None else 999,
+            m.straight_m,
+            -m.newness_score,
+        ))
 
     imprecise.sort(key=lambda m: (m.price or 99999))
 
